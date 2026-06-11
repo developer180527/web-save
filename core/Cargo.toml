@@ -1,0 +1,17 @@
+[package]
+name = "websave-core"
+version = "0.1.0"
+edition = "2021"
+description = "Portable local-first web bookmark vault: SQLite + FTS5 storage, search and link monitoring. No UI dependencies."
+
+[dependencies]
+log = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+ureq = "2"
+url = "2"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

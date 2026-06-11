@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "WebSave",
+  "version": "0.1.0",
+  "description": "Save pages to your local WebSave vault with a right click.",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "alarms",
+    "notifications",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": ["http://127.0.0.1:38917/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Save to WebSave"
+  },
+  "icons": {
+    "32": "icons/32.png",
+    "128": "icons/128.png"
+  }
+}
