@@ -20,6 +20,7 @@ echo "==> Compiling Swift app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
+cp "$ROOT/src-tauri/icons/icon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 swiftc -O \
     Sources/*.swift Generated/websave_ffi.swift \
