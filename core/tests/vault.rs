@@ -301,3 +301,105 @@ fn archive_snapshot_is_stored_and_searchable() {
         .unwrap();
     assert!(vault.archive_text(s.id).unwrap().is_some(), "kept");
 }
+
+#[test]
+fn urls_are_canonicalized_for_dedupe() {
+    let (_dir, vault) = vault();
+    let a = save(
+        &vault,
+        "https://blog.example/post?utm_source=x&utm_campaign=y&id=7&fbclid=abc",
+        "Post",
+        &[],
+    );
+    assert_eq!(a.url, "https://blog.example/post?id=7", "tracking stripped, real params kept");
+
+    // The same article via a different tracking link dedupes onto one save.
+    let b = save(&vault, "https://blog.example/post?id=7&gclid=zzz", "Post again", &[]);
+    assert_eq!(a.id, b.id);
+
+    let c = save(&vault, "https://blog.example/clean?utm_medium=mail", "Clean", &[]);
+    assert_eq!(c.url, "https://blog.example/clean", "empty query removed entirely");
+}
+
+#[test]
+fn read_flag_and_inbox_filter() {
+    let (_dir, vault) = vault();
+    let a = save(&vault, "https://a.example", "A", &[]);
+    let b = save(&vault, "https://b.example", "B", &[]);
+    assert!(!a.is_read, "new saves arrive unread");
+
+    vault.set_read(a.id, true).unwrap();
+    let inbox = vault
+        .list_saves(&ListQuery {
+            unread_only: true,
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(inbox.iter().map(|s| s.id).collect::<Vec<_>>(), vec![b.id]);
+    assert_eq!(vault.stats().unwrap().unread, 1);
+
+    vault.set_read_many(&[a.id, b.id], false).unwrap();
+    assert_eq!(vault.stats().unwrap().unread, 2);
+}
+
+#[test]
+fn bulk_operations() {
+    let (_dir, vault) = vault();
+    let ids: Vec<i64> = (1..=4)
+        .map(|i| save(&vault, &format!("https://x{i}.example"), &format!("X{i}"), &[]).id)
+        .collect();
+
+    vault.set_favorite_many(&ids[..2], true).unwrap();
+    assert_eq!(vault.stats().unwrap().favorites, 2);
+
+    vault.add_tag_many(&ids, "batch").unwrap();
+    let tagged = vault
+        .list_saves(&ListQuery {
+            tag: Some("batch".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(tagged.len(), 4);
+
+    vault.delete_many(&ids[..3]).unwrap();
+    assert_eq!(vault.stats().unwrap().total, 1);
+    assert_eq!(vault.list_tags().unwrap().len(), 1, "tag survives on remaining save");
+}
+
+#[test]
+fn saved_searches_roundtrip() {
+    let (_dir, vault) = vault();
+    let q = ListQuery {
+        query: Some("rust".into()),
+        unread_only: true,
+        ..Default::default()
+    };
+    let s = vault.add_saved_search("Rust inbox", &q).unwrap();
+    let all = vault.list_saved_searches().unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].name, "Rust inbox");
+    assert_eq!(all[0].query.query.as_deref(), Some("rust"));
+    assert!(all[0].query.unread_only);
+
+    vault.delete_saved_search(s.id).unwrap();
+    assert!(vault.list_saved_searches().unwrap().is_empty());
+
+    assert!(vault.add_saved_search("   ", &q).is_err(), "name required");
+}
+
+#[test]
+fn set_url_accepts_redirects_and_guards_conflicts() {
+    let (_dir, vault) = vault();
+    let a = save(&vault, "https://old.example/page", "Old", &[]);
+    let b = save(&vault, "https://taken.example", "Taken", &[]);
+
+    let moved = vault.set_url(a.id, "https://new.example/page").unwrap();
+    assert_eq!(moved.url, "https://new.example/page");
+    assert_eq!(moved.status, LinkStatus::Unchecked, "re-check scheduled");
+    assert_eq!(moved.redirect_url, "");
+
+    match vault.set_url(a.id, &b.url) {
+        Err(Error::Conflict(_)) => {}
+        other => panic!("expected Conflict, got {other:?}"),
+    }
+}

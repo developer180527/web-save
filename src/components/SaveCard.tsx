@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Save } from "../types";
 import { hostOf, relativeTime, STATUS_LABELS } from "../utils";
 import {
+  CheckIcon,
   DotsIcon,
   ExternalIcon,
   PencilIcon,
@@ -13,9 +14,15 @@ import {
 interface Props {
   save: Save;
   selected: boolean;
+  /** Keyboard focus (j/k navigation). */
+  focused: boolean;
+  /** Part of the current multi-selection. */
+  bulkSelected: boolean;
   variant: "list" | "card";
   /** Vault root path, needed to resolve cached thumbnails. */
   vaultPath: string;
+  /** Raw click — the app decides between open and (multi-)select. */
+  onCardClick: (e: React.MouseEvent, save: Save) => void;
   onOpen: (save: Save) => void;
   onEdit: (save: Save) => void;
   onDelete: (save: Save) => void;
@@ -85,8 +92,11 @@ export function Favicon({ save }: { save: Save }) {
 export default function SaveCard({
   save,
   selected,
+  focused,
+  bulkSelected,
   variant,
   vaultPath,
+  onCardClick,
   onOpen,
   onEdit,
   onDelete,
@@ -94,6 +104,13 @@ export default function SaveCard({
   onPickTag,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const cardRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (focused) {
+      cardRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [focused]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -108,10 +125,16 @@ export default function SaveCard({
 
   return (
     <article
-      className={`save-card ${variant === "card" ? "grid-card" : ""} ${selected ? "selected" : ""}`}
+      ref={cardRef}
+      className={`save-card ${variant === "card" ? "grid-card" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${bulkSelected ? "bulk-selected" : ""}`}
       title={save.url}
-      onClick={() => onOpen(save)}
+      onClick={(e) => onCardClick(e, save)}
     >
+      {bulkSelected && (
+        <span className="bulk-check">
+          <CheckIcon size={12} />
+        </span>
+      )}
       {variant === "card" ? (
         <Thumbnail save={save} vaultPath={vaultPath} />
       ) : (
@@ -119,6 +142,7 @@ export default function SaveCard({
       )}
       <div className="save-body">
         <div className="save-title-row">
+          {!save.isRead && <span className="unread-dot" title="Unread" />}
           <span className="save-title">{save.title || hostOf(save.url)}</span>
           {save.status !== "unchecked" && (
             <span

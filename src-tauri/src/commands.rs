@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
-use websave_core::{ListQuery, NewSave, Save, SavePatch, TagCount, Vault, VaultStats};
+use websave_core::{
+    ListQuery, NewSave, Save, SavePatch, SavedSearch, TagCount, Vault, VaultStats,
+};
 
 type VaultState<'a> = State<'a, Arc<Vault>>;
 
@@ -75,6 +77,87 @@ pub fn delete_save(app: AppHandle, vault: VaultState, id: i64) -> Result<(), Str
     vault.delete_save(id).map_err(err)?;
     announce(&app);
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_read(app: AppHandle, vault: VaultState, id: i64, is_read: bool) -> Result<Save, String> {
+    let save = vault.set_read(id, is_read).map_err(err)?;
+    announce(&app);
+    Ok(save)
+}
+
+#[tauri::command]
+pub fn set_url(app: AppHandle, vault: VaultState, id: i64, url: String) -> Result<Save, String> {
+    let save = vault.set_url(id, &url).map_err(err)?;
+    announce(&app);
+    crate::wake_monitor(&app);
+    Ok(save)
+}
+
+// ---- bulk operations ----
+
+#[tauri::command]
+pub fn bulk_set_favorite(
+    app: AppHandle,
+    vault: VaultState,
+    ids: Vec<i64>,
+    favorite: bool,
+) -> Result<(), String> {
+    vault.set_favorite_many(&ids, favorite).map_err(err)?;
+    announce(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn bulk_set_read(
+    app: AppHandle,
+    vault: VaultState,
+    ids: Vec<i64>,
+    is_read: bool,
+) -> Result<(), String> {
+    vault.set_read_many(&ids, is_read).map_err(err)?;
+    announce(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn bulk_delete(app: AppHandle, vault: VaultState, ids: Vec<i64>) -> Result<(), String> {
+    vault.delete_many(&ids).map_err(err)?;
+    announce(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn bulk_add_tag(
+    app: AppHandle,
+    vault: VaultState,
+    ids: Vec<i64>,
+    tag: String,
+) -> Result<(), String> {
+    vault.add_tag_many(&ids, &tag).map_err(err)?;
+    announce(&app);
+    Ok(())
+}
+
+// ---- saved searches ----
+
+#[tauri::command]
+pub fn list_saved_searches(vault: VaultState) -> Result<Vec<SavedSearch>, String> {
+    vault.list_saved_searches().map_err(err)
+}
+
+#[tauri::command]
+pub fn add_saved_search(
+    vault: VaultState,
+    name: String,
+    query: ListQuery,
+) -> Result<SavedSearch, String> {
+    vault.add_saved_search(&name, &query).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_saved_search(vault: VaultState, id: i64) -> Result<(), String> {
+    vault.delete_saved_search(id).map_err(err)
 }
 
 #[tauri::command]

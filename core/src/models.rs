@@ -52,6 +52,8 @@ pub struct Save {
     /// (e.g. `thumbs/42.jpg`). Empty when none has been fetched yet.
     pub thumbnail: String,
     pub favorite: bool,
+    /// Unread saves form the Inbox; opening a save marks it read.
+    pub is_read: bool,
     pub status: LinkStatus,
     /// Final URL after redirects, when it differs from `url`.
     pub redirect_url: String,
@@ -96,6 +98,7 @@ pub struct ListQuery {
     pub query: Option<String>,
     pub tag: Option<String>,
     pub favorites_only: bool,
+    pub unread_only: bool,
     pub status: Option<LinkStatus>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -108,11 +111,22 @@ pub struct TagCount {
     pub count: i64,
 }
 
+/// A persisted query+filter combination shown in the sidebar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSearch {
+    pub id: i64,
+    pub name: String,
+    pub query: ListQuery,
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultStats {
     pub total: i64,
     pub favorites: i64,
+    pub unread: i64,
     pub unchecked: i64,
     pub active: i64,
     pub changed: i64,

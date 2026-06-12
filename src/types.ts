@@ -14,6 +14,7 @@ export interface Save {
   faviconUrl: string;
   thumbnail: string;
   favorite: boolean;
+  isRead: boolean;
   status: LinkStatus;
   redirectUrl: string;
   httpStatus: number | null;
@@ -43,9 +44,17 @@ export interface ListQuery {
   query?: string | null;
   tag?: string | null;
   favoritesOnly?: boolean;
+  unreadOnly?: boolean;
   status?: LinkStatus | null;
   limit?: number | null;
   offset?: number | null;
+}
+
+export interface SavedSearch {
+  id: number;
+  name: string;
+  query: ListQuery;
+  createdAt: number;
 }
 
 export interface TagCount {
@@ -67,9 +76,12 @@ export interface ImportPreview extends ImportReport {
 export interface VaultStats {
   total: number;
   favorites: number;
+  unread: number;
   unchecked: number;
   active: number;
   changed: number;
   redirected: number;
   dead: number;
 }
+
+

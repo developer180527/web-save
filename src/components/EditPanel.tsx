@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "../api";
 import type { Save } from "../types";
 import { parseTagsInput, relativeTime, STATUS_LABELS } from "../utils";
@@ -107,10 +108,51 @@ export default function EditPanel({
           {save.lastCheckedAt != null && (
             <span>checked {relativeTime(save.lastCheckedAt)}</span>
           )}
+          <button
+            className="btn btn-subtle"
+            onClick={async () => {
+              try {
+                onChanged(await api.setRead(save.id, !save.isRead));
+              } catch (e) {
+                onError(String(e));
+              }
+            }}
+          >
+            {save.isRead ? "Mark unread" : "Mark read"}
+          </button>
         </div>
         {save.status === "redirected" && save.redirectUrl && (
           <div className="edit-redirect" title={save.redirectUrl}>
-            → now at {save.redirectUrl}
+            <span className="edit-redirect-url">→ now at {save.redirectUrl}</span>
+            <button
+              className="btn btn-subtle"
+              title="Replace the saved URL with the redirect target"
+              onClick={async () => {
+                try {
+                  onChanged(await api.setUrl(save.id, save.redirectUrl));
+                } catch (e) {
+                  onError(String(e));
+                }
+              }}
+            >
+              Accept new URL
+            </button>
+          </div>
+        )}
+
+        {save.status === "dead" && (
+          <div className="edit-redirect" title="Look for a snapshot on the Internet Archive">
+            <span className="edit-redirect-url">Link appears dead.</span>
+            <button
+              className="btn btn-subtle"
+              onClick={() =>
+                openUrl(`https://web.archive.org/web/${save.url}`).catch((e) =>
+                  onError(String(e)),
+                )
+              }
+            >
+              Open in Wayback Machine
+            </button>
           </div>
         )}
 

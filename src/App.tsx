@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "./api";
-import type { ListQuery, Save, TagCount, VaultStats } from "./types";
+import type {
+  ListQuery,
+  Save,
+  SavedSearch,
+  TagCount,
+  VaultStats,
+} from "./types";
 import Sidebar, { type View } from "./components/Sidebar";
 import SaveCard from "./components/SaveCard";
 import EditPanel from "./components/EditPanel";
@@ -11,7 +17,16 @@ import SettingsPage, {
   type Theme,
 } from "./components/SettingsPage";
 import ImportDialog from "./components/ImportDialog";
-import { GridIcon, ImportIcon, ListIcon, PlusIcon } from "./components/Icons";
+import CommandPalette, {
+  type PaletteAction,
+} from "./components/CommandPalette";
+import {
+  GridIcon,
+  ImportIcon,
+  ListIcon,
+  PlusIcon,
+  SearchIcon,
+} from "./components/Icons";
 import "./App.css";
 
 const MIN_SIDEBAR = 180;
@@ -33,6 +48,21 @@ function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [vaultDir, setVaultDir] = useState("");
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [saveSearchOpen, setSaveSearchOpen] = useState(false);
+  const [saveSearchName, setSaveSearchName] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Multi-selection for bulk operations.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [anchorId, setAnchorId] = useState<number | null>(null);
+  const [bulkTagOpen, setBulkTagOpen] = useState(false);
+  const [bulkTag, setBulkTag] = useState("");
+
+  // Keyboard focus (j/k).
+  const [focusedIdx, setFocusedIdx] = useState(-1);
+  const searchRef = useRef<HTMLInputElement>(null);
+
   const [viewMode, setViewMode] = useState<"list" | "cards">(
     () => (localStorage.getItem("viewMode") as "list" | "cards") || "list",
   );
@@ -45,18 +75,22 @@ function App() {
 
   // The add popover closes on Escape or any outside click.
   useEffect(() => {
-    if (!addOpen) return;
-    const onClick = () => setAddOpen(false);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAddOpen(false);
+    if (!addOpen && !saveSearchOpen && !bulkTagOpen) return;
+    const close = () => {
+      setAddOpen(false);
+      setSaveSearchOpen(false);
+      setBulkTagOpen(false);
     };
-    window.addEventListener("click", onClick);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
     window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("click", onClick);
+      window.removeEventListener("click", close);
       window.removeEventListener("keydown", onKey);
     };
-  }, [addOpen]);
+  }, [addOpen, saveSearchOpen, bulkTagOpen]);
 
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem("theme") as Theme) || "system",
@@ -91,12 +125,29 @@ function App() {
     window.addEventListener("mouseup", onUp);
   }
 
+  function currentQuery(): ListQuery {
+    return {
+      query: search.trim() || null,
+      tag: activeTag,
+      favoritesOnly: view === "favorites",
+      unreadOnly: view === "inbox",
+      status:
+        view !== "all" && view !== "favorites" && view !== "inbox"
+          ? view
+          : null,
+    };
+  }
+
   const refresh = useCallback(async () => {
     const query: ListQuery = {
       query: search.trim() || null,
       tag: activeTag,
       favoritesOnly: view === "favorites",
-      status: view !== "all" && view !== "favorites" ? view : null,
+      unreadOnly: view === "inbox",
+      status:
+        view !== "all" && view !== "favorites" && view !== "inbox"
+          ? view
+          : null,
     };
     try {
       const [s, t, st] = await Promise.all([
@@ -118,19 +169,27 @@ function App() {
     return () => clearTimeout(timer);
   }, [refresh]);
 
+  // Keep keyboard focus inside the list as it changes.
+  useEffect(() => {
+    setFocusedIdx((i) => Math.min(i, saves.length - 1));
+  }, [saves]);
+
+  const loadSavedSearches = useCallback(() => {
+    api.listSavedSearches().then(setSavedSearches).catch(() => {});
+  }, []);
+  useEffect(loadSavedSearches, [loadSavedSearches]);
+
   // Bring the macOS menubar companion up alongside the engine, if enabled.
   useEffect(() => {
     if (
       navigator.userAgent.includes("Mac") &&
       localStorage.getItem(MENUBAR_AUTOLAUNCH_KEY) === "true"
     ) {
-      api.launchMenubarApp().catch(() => {
-        // Not installed/built yet — settings has the button and the hint.
-      });
+      api.launchMenubarApp().catch(() => {});
     }
   }, []);
 
-  // Background monitor (and future capture clients) signal through this event.
+  // Background monitor (and capture clients) signal through this event.
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
   useEffect(() => {
@@ -175,12 +234,64 @@ function App() {
     }
   }
 
+  async function handleToggleRead(save: Save) {
+    try {
+      applyChange(await api.setRead(save.id, !save.isRead));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  /** Open in browser; an opened save is a read save. */
   async function handleOpen(save: Save) {
     try {
       await openUrl(save.url);
     } catch (e) {
       setError(String(e));
+      return;
     }
+    if (!save.isRead) {
+      try {
+        applyChange(await api.setRead(save.id, true));
+      } catch {
+        // non-fatal
+      }
+    }
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  /** Plain click opens; ⌘-click toggles selection; shift-click selects a range. */
+  function handleCardClick(e: React.MouseEvent, save: Save) {
+    if (e.metaKey || e.ctrlKey) {
+      toggleSelect(save.id);
+      setAnchorId(save.id);
+      return;
+    }
+    if (e.shiftKey && anchorId !== null) {
+      const ai = saves.findIndex((s) => s.id === anchorId);
+      const bi = saves.findIndex((s) => s.id === save.id);
+      if (ai >= 0 && bi >= 0) {
+        const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          for (let i = lo; i <= hi; i++) next.add(saves[i].id);
+          return next;
+        });
+        return;
+      }
+    }
+    handleOpen(save);
   }
 
   async function handleDelete(save: Save) {
@@ -202,10 +313,166 @@ function App() {
     } catch (e) {
       setError(String(e));
     } finally {
-      // Results stream in via "saves-updated"; release the button right away.
       setRechecking(false);
     }
   }
+
+  // ---- bulk operations ----
+
+  const bulkIds = [...selectedIds];
+
+  async function runBulk(op: () => Promise<void>) {
+    try {
+      await op();
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function bulkDeleteSelected() {
+    if (!confirm(`Delete ${bulkIds.length} saves?`)) return;
+    await runBulk(() => api.bulkDelete(bulkIds));
+    setSelectedIds(new Set());
+    setSelected((prev) =>
+      prev && selectedIds.has(prev.id) ? null : prev,
+    );
+  }
+
+  // ---- saved searches ----
+
+  const filtersActive =
+    search.trim() !== "" || activeTag !== null || view !== "all";
+
+  async function handleSaveSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!saveSearchName.trim()) return;
+    try {
+      await api.addSavedSearch(saveSearchName.trim(), currentQuery());
+      setSaveSearchName("");
+      setSaveSearchOpen(false);
+      loadSavedSearches();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  function applySavedSearch(s: SavedSearch) {
+    setScreen("library");
+    setSearch(s.query.query ?? "");
+    setActiveTag(s.query.tag ?? null);
+    setView(
+      s.query.favoritesOnly
+        ? "favorites"
+        : s.query.unreadOnly
+          ? "inbox"
+          : (s.query.status ?? "all"),
+    );
+    setSelected(null);
+  }
+
+  // ---- keyboard layer ----
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const typing =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
+      if (typing || paletteOpen || importOpen || screen === "settings") return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        setSelectedIds(new Set(saves.map((s) => s.id)));
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const focusedSave =
+        focusedIdx >= 0 && focusedIdx < saves.length
+          ? saves[focusedIdx]
+          : undefined;
+
+      switch (e.key) {
+        case "j":
+        case "ArrowDown":
+          e.preventDefault();
+          setFocusedIdx((i) => Math.min(i + 1, saves.length - 1));
+          break;
+        case "k":
+        case "ArrowUp":
+          e.preventDefault();
+          setFocusedIdx((i) => Math.max(i - 1, 0));
+          break;
+        case "Enter":
+          if (focusedSave) handleOpen(focusedSave);
+          break;
+        case "e":
+          if (focusedSave) setSelected(focusedSave);
+          break;
+        case "s":
+          if (focusedSave) handleToggleFavorite(focusedSave);
+          break;
+        case "r":
+          if (focusedSave) handleToggleRead(focusedSave);
+          break;
+        case "x":
+          if (focusedSave) {
+            toggleSelect(focusedSave.id);
+            setAnchorId(focusedSave.id);
+          }
+          break;
+        case "/":
+          e.preventDefault();
+          searchRef.current?.focus();
+          break;
+        case "Escape":
+          if (selectedIds.size > 0) {
+            setSelectedIds(new Set());
+          } else if (selected) {
+            setSelected(null);
+          } else {
+            setFocusedIdx(-1);
+          }
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const paletteActions: PaletteAction[] = [
+    { id: "add", label: "Add a URL…", run: () => setAddOpen(true) },
+    { id: "import", label: "Import bookmarks…", run: () => setImportOpen(true) },
+    {
+      id: "view",
+      label:
+        viewMode === "list" ? "Switch to card view" : "Switch to list view",
+      run: () => setViewMode((m) => (m === "list" ? "cards" : "list")),
+    },
+    {
+      id: "inbox",
+      label: "Go to Inbox",
+      run: () => {
+        setScreen("library");
+        setView("inbox");
+      },
+    },
+    { id: "settings", label: "Open settings", run: () => setScreen("settings") },
+    { id: "recheck", label: "Re-check all links", run: handleRecheckAll },
+    ...savedSearches.map((s) => ({
+      id: `ss-${s.id}`,
+      label: `Saved search: ${s.name}`,
+      run: () => applySavedSearch(s),
+    })),
+  ];
 
   const showPanel = screen === "library" && selected !== null;
   const gridColumns = `${sidebarWidth}px 5px 1fr${showPanel ? " 360px" : ""}`;
@@ -226,6 +493,13 @@ function App() {
           setScreen("library");
         }}
         stats={stats}
+        savedSearches={savedSearches}
+        onApplySavedSearch={applySavedSearch}
+        onDeleteSavedSearch={(id) =>
+          api.deleteSavedSearch(id).then(loadSavedSearches).catch((e) =>
+            setError(String(e)),
+          )
+        }
         onRecheckAll={handleRecheckAll}
         rechecking={rechecking}
         onOpenSettings={() =>
@@ -253,12 +527,41 @@ function App() {
         <main className="main">
           <div className="toolbar">
             <input
+              ref={searchRef}
               type="search"
               className="search-input"
-              placeholder="Search titles, URLs, notes, tags…"
+              placeholder="Search titles, URLs, notes, tags, page text…  ( / )"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            {filtersActive && (
+              <div className="add-wrap" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="icon-btn"
+                  title="Save this search to the sidebar"
+                  onClick={() => setSaveSearchOpen((v) => !v)}
+                >
+                  <SearchIcon size={15} />
+                </button>
+                {saveSearchOpen && (
+                  <form className="add-popover" onSubmit={handleSaveSearch}>
+                    <input
+                      autoFocus
+                      className="add-input"
+                      placeholder="Name this search…"
+                      value={saveSearchName}
+                      onChange={(e) => setSaveSearchName(e.target.value)}
+                    />
+                    <button
+                      className="btn btn-primary"
+                      disabled={!saveSearchName.trim()}
+                    >
+                      Save
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
             <div className="view-toggle">
               <button
                 className={`icon-btn ${viewMode === "list" ? "active" : ""}`}
@@ -328,14 +631,98 @@ function App() {
             </div>
           )}
 
+          {selectedIds.size > 0 && (
+            <div className="bulk-bar">
+              <span className="bulk-count">{selectedIds.size} selected</span>
+              <button
+                className="btn btn-subtle"
+                onClick={() => runBulk(() => api.bulkSetFavorite(bulkIds, true))}
+              >
+                Star
+              </button>
+              <button
+                className="btn btn-subtle"
+                onClick={() =>
+                  runBulk(() => api.bulkSetFavorite(bulkIds, false))
+                }
+              >
+                Unstar
+              </button>
+              <button
+                className="btn btn-subtle"
+                onClick={() => runBulk(() => api.bulkSetRead(bulkIds, true))}
+              >
+                Mark read
+              </button>
+              <button
+                className="btn btn-subtle"
+                onClick={() => runBulk(() => api.bulkSetRead(bulkIds, false))}
+              >
+                Mark unread
+              </button>
+              <div className="add-wrap" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="btn btn-subtle"
+                  onClick={() => setBulkTagOpen((v) => !v)}
+                >
+                  Add tag…
+                </button>
+                {bulkTagOpen && (
+                  <form
+                    className="add-popover bulk-tag-popover"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!bulkTag.trim()) return;
+                      await runBulk(() =>
+                        api.bulkAddTag(bulkIds, bulkTag.trim()),
+                      );
+                      setBulkTag("");
+                      setBulkTagOpen(false);
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      className="add-input"
+                      placeholder="Tag name…"
+                      value={bulkTag}
+                      onChange={(e) => setBulkTag(e.target.value)}
+                    />
+                    <button
+                      className="btn btn-primary"
+                      disabled={!bulkTag.trim()}
+                    >
+                      Tag
+                    </button>
+                  </form>
+                )}
+              </div>
+              <button
+                className="btn btn-subtle bulk-danger"
+                onClick={bulkDeleteSelected}
+              >
+                Delete
+              </button>
+              <span className="bulk-spacer" />
+              <button
+                className="btn btn-subtle"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear (Esc)
+              </button>
+            </div>
+          )}
+
           <div className={viewMode === "cards" ? "save-grid" : "save-list"}>
-            {saves.map((save) => (
+            {saves.map((save, i) => (
               <SaveCard
                 key={save.id}
                 save={save}
                 selected={selected?.id === save.id}
+                focused={focusedIdx === i}
+                bulkSelected={selectedIds.has(save.id)}
                 variant={viewMode === "cards" ? "card" : "list"}
                 vaultPath={vaultDir}
+                onCardClick={handleCardClick}
                 onOpen={handleOpen}
                 onEdit={setSelected}
                 onDelete={handleDelete}
@@ -345,9 +732,11 @@ function App() {
             ))}
             {saves.length === 0 && (
               <div className="empty-state">
-                {search.trim() || activeTag || view !== "all"
-                  ? "Nothing matches the current filters."
-                  : "No saves yet. Paste a URL above to get started — the browser extension lands in phase 2."}
+                {view === "inbox"
+                  ? "Inbox zero — everything's read. 🎉"
+                  : filtersActive
+                    ? "Nothing matches the current filters."
+                    : "No saves yet. Hit Add or save a page from the browser extension."}
               </div>
             )}
           </div>
@@ -360,6 +749,14 @@ function App() {
             setImportOpen(false);
             refresh();
           }}
+        />
+      )}
+
+      {paletteOpen && (
+        <CommandPalette
+          actions={paletteActions}
+          onClose={() => setPaletteOpen(false)}
+          onOpenSave={handleOpen}
         />
       )}
 

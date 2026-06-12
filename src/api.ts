@@ -6,6 +6,7 @@ import type {
   NewSave,
   Save,
   SavePatch,
+  SavedSearch,
   TagCount,
   VaultStats,
 } from "./types";
@@ -25,6 +26,33 @@ export const setFavorite = (id: number, favorite: boolean) =>
 
 export const setTags = (id: number, tags: string[]) =>
   invoke<Save>("set_tags", { id, tags });
+
+export const setRead = (id: number, isRead: boolean) =>
+  invoke<Save>("set_read", { id, isRead });
+
+export const setUrl = (id: number, url: string) =>
+  invoke<Save>("set_url", { id, url });
+
+export const bulkSetFavorite = (ids: number[], favorite: boolean) =>
+  invoke<void>("bulk_set_favorite", { ids, favorite });
+
+export const bulkSetRead = (ids: number[], isRead: boolean) =>
+  invoke<void>("bulk_set_read", { ids, isRead });
+
+export const bulkDelete = (ids: number[]) =>
+  invoke<void>("bulk_delete", { ids });
+
+export const bulkAddTag = (ids: number[], tag: string) =>
+  invoke<void>("bulk_add_tag", { ids, tag });
+
+export const listSavedSearches = () =>
+  invoke<SavedSearch[]>("list_saved_searches");
+
+export const addSavedSearch = (name: string, query: ListQuery) =>
+  invoke<SavedSearch>("add_saved_search", { name, query });
+
+export const deleteSavedSearch = (id: number) =>
+  invoke<void>("delete_saved_search", { id });
 
 export const deleteSave = (id: number) => invoke<void>("delete_save", { id });
 

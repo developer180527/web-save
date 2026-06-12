@@ -78,6 +78,71 @@ export const RefreshIcon = ({ size }: IconProps) => (
   </Svg>
 );
 
+export const BookmarkIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  </Svg>
+);
+
+export const InboxIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+    <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+  </Svg>
+);
+
+export const HashIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <line x1="4" y1="9" x2="20" y2="9" />
+    <line x1="4" y1="15" x2="20" y2="15" />
+    <line x1="10" y1="3" x2="8" y2="21" />
+    <line x1="16" y1="3" x2="14" y2="21" />
+  </Svg>
+);
+
+export const CheckCircleIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+    <polyline points="22 4 12 14.01 9 11.01" />
+  </Svg>
+);
+
+export const RedirectIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <polyline points="15 14 20 9 15 4" />
+    <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+  </Svg>
+);
+
+export const XCircleIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="15" y1="9" x2="9" y2="15" />
+    <line x1="9" y1="9" x2="15" y2="15" />
+  </Svg>
+);
+
+export const HelpCircleIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </Svg>
+);
+
+export const CheckIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <polyline points="20 6 9 17 4 12" />
+  </Svg>
+);
+
+export const SearchIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </Svg>
+);
+
 export const ListIcon = ({ size }: IconProps) => (
   <Svg size={size}>
     <line x1="8" y1="6" x2="21" y2="6" />

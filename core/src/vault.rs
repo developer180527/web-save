@@ -8,7 +8,9 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Row};
 
 use crate::error::{Error, Result};
 use crate::import::{ImportItem, ImportReport};
-use crate::models::{LinkStatus, ListQuery, NewSave, Save, SavePatch, TagCount, VaultStats};
+use crate::models::{
+    LinkStatus, ListQuery, NewSave, Save, SavePatch, SavedSearch, TagCount, VaultStats,
+};
 use crate::monitor::{self, CheckOutcome, CheckTarget};
 
 pub const DB_FILE: &str = "websave.db";
@@ -112,11 +114,24 @@ END;
 
 INSERT INTO saves_fts(rowid, title, url, description, notes, tags, archive)
 SELECT id, title, url, description, notes, tags_text, archive_text FROM saves;
+"#,
+    // v4: read/unread (Inbox) + saved searches. Existing saves start read so
+    // an upgrade doesn't flood the Inbox; new captures arrive unread.
+    r#"
+ALTER TABLE saves ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0;
+UPDATE saves SET is_read = 1;
+
+CREATE TABLE saved_searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    query_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 "#];
 
 const SAVE_COLS: &str = "s.id, s.url, s.title, s.description, s.notes, s.favicon_url, s.favorite, \
      s.status, s.redirect_url, s.http_status, s.created_at, s.updated_at, s.last_checked_at, \
-     s.thumbnail, s.archived_at";
+     s.thumbnail, s.archived_at, s.is_read";
 
 /// Subdirectory of the assets dir holding cached cover images.
 pub const THUMBS_DIR: &str = "thumbs";
@@ -227,6 +242,9 @@ impl Vault {
         if q.favorites_only {
             where_clauses.push("s.favorite = 1".into());
         }
+        if q.unread_only {
+            where_clauses.push("s.is_read = 0".into());
+        }
         if let Some(status) = q.status {
             values.push(Value::Text(status.as_str().into()));
             where_clauses.push(format!("s.status = ?{}", values.len()));
@@ -315,6 +333,165 @@ impl Vault {
         get_save_on(&conn, id)
     }
 
+    pub fn set_read(&self, id: i64, is_read: bool) -> Result<Save> {
+        let conn = self.conn.lock().unwrap();
+        let changed = conn.execute(
+            "UPDATE saves SET is_read = ?1 WHERE id = ?2",
+            params![is_read, id],
+        )?;
+        if changed == 0 {
+            return Err(Error::NotFound(id));
+        }
+        get_save_on(&conn, id)
+    }
+
+    // ---- bulk operations (single transaction each) ----
+
+    pub fn set_favorite_many(&self, ids: &[i64], favorite: bool) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for id in ids {
+            tx.execute(
+                "UPDATE saves SET favorite = ?1, updated_at = ?2 WHERE id = ?3",
+                params![favorite, now(), id],
+            )?;
+        }
+        tx.commit()?;
+        log::debug!("bulk favorite={favorite} for {} save(s)", ids.len());
+        Ok(())
+    }
+
+    pub fn set_read_many(&self, ids: &[i64], is_read: bool) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for id in ids {
+            tx.execute(
+                "UPDATE saves SET is_read = ?1 WHERE id = ?2",
+                params![is_read, id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_many(&self, ids: &[i64]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for id in ids {
+            tx.execute("DELETE FROM saves WHERE id = ?1", params![id])?;
+        }
+        tx.execute(
+            "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM save_tags)",
+            [],
+        )?;
+        tx.commit()?;
+        log::info!("bulk delete: removed {} save(s)", ids.len());
+        Ok(())
+    }
+
+    /// Add one tag to each save (existing tags kept).
+    pub fn add_tag_many(&self, ids: &[i64], tag: &str) -> Result<()> {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for id in ids {
+            let mut tags = tags_for(&tx, *id)?;
+            if !tags.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+                tags.push(tag.to_string());
+                set_tags_on(&tx, *id, &tags)?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---- saved searches ----
+
+    pub fn list_saved_searches(&self) -> Result<Vec<SavedSearch>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, query_json, created_at FROM saved_searches ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, json, created_at)| SavedSearch {
+                id,
+                name,
+                query: serde_json::from_str(&json).unwrap_or_default(),
+                created_at,
+            })
+            .collect())
+    }
+
+    pub fn add_saved_search(&self, name: &str, query: &ListQuery) -> Result<SavedSearch> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(Error::Conflict("a saved search needs a name".into()));
+        }
+        let json = serde_json::to_string(query)
+            .map_err(|e| Error::Conflict(format!("unserializable query: {e}")))?;
+        let created_at = now();
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO saved_searches (name, query_json, created_at) VALUES (?1, ?2, ?3)",
+            params![name, json, created_at],
+        )?;
+        Ok(SavedSearch {
+            id: conn.last_insert_rowid(),
+            name: name.to_string(),
+            query: query.clone(),
+            created_at,
+        })
+    }
+
+    pub fn delete_saved_search(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM saved_searches WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Point a save at a new URL — the "accept redirect" workflow. Check
+    /// state resets so the monitor re-verifies the new location promptly.
+    pub fn set_url(&self, id: i64, new_url: &str) -> Result<Save> {
+        let url = normalize_url(new_url)?;
+        let conn = self.conn.lock().unwrap();
+        let taken: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM saves WHERE url = ?1 AND id != ?2",
+                params![url, id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if taken.is_some() {
+            return Err(Error::Conflict(format!("{url} is already saved")));
+        }
+        let changed = conn.execute(
+            "UPDATE saves SET url = ?1, redirect_url = '', status = 'unchecked',
+                content_hash = '', http_status = NULL, last_checked_at = NULL,
+                updated_at = ?2
+             WHERE id = ?3",
+            params![url, now(), id],
+        )?;
+        if changed == 0 {
+            return Err(Error::NotFound(id));
+        }
+        log::info!("set_url: #{id} now points at {url}");
+        get_save_on(&conn, id)
+    }
+
     /// Replace the tag set of a save. Tags are deduplicated case-insensitively
     /// and orphaned tags are removed from the vault.
     pub fn set_tags(&self, id: i64, tags: &[String]) -> Result<Save> {
@@ -371,6 +548,7 @@ impl Vault {
         let stats = conn.query_row(
             "SELECT COUNT(*),
                     COALESCE(SUM(favorite), 0),
+                    COALESCE(SUM(is_read = 0), 0),
                     COALESCE(SUM(status = 'unchecked'), 0),
                     COALESCE(SUM(status = 'active'), 0),
                     COALESCE(SUM(status = 'changed'), 0),
@@ -382,11 +560,12 @@ impl Vault {
                 Ok(VaultStats {
                     total: r.get(0)?,
                     favorites: r.get(1)?,
-                    unchecked: r.get(2)?,
-                    active: r.get(3)?,
-                    changed: r.get(4)?,
-                    redirected: r.get(5)?,
-                    dead: r.get(6)?,
+                    unread: r.get(2)?,
+                    unchecked: r.get(3)?,
+                    active: r.get(4)?,
+                    changed: r.get(5)?,
+                    redirected: r.get(6)?,
+                    dead: r.get(7)?,
                 })
             },
         )?;
@@ -690,11 +869,40 @@ fn now() -> i64 {
         .unwrap_or(0)
 }
 
+/// Query parameters that only track the click, never select content.
+const TRACKING_PARAMS: &[&str] = &[
+    "fbclid", "gclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid", "igshid", "mc_cid",
+    "mc_eid", "si",
+];
+
+fn is_tracking_param(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    key.starts_with("utm_") || TRACKING_PARAMS.contains(&key.as_str())
+}
+
+/// Validate and canonicalize: same article shared via three tracking links
+/// must land on one save.
 fn normalize_url(raw: &str) -> Result<String> {
     let trimmed = raw.trim();
-    let parsed = url::Url::parse(trimmed).map_err(|_| Error::InvalidUrl(trimmed.to_string()))?;
+    let mut parsed =
+        url::Url::parse(trimmed).map_err(|_| Error::InvalidUrl(trimmed.to_string()))?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err(Error::InvalidUrl(trimmed.to_string()));
+    }
+    if parsed.query().is_some() {
+        let kept: Vec<(String, String)> = parsed
+            .query_pairs()
+            .filter(|(k, _)| !is_tracking_param(k))
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        if kept.is_empty() {
+            parsed.set_query(None);
+        } else {
+            parsed
+                .query_pairs_mut()
+                .clear()
+                .extend_pairs(kept.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        }
     }
     Ok(parsed.to_string())
 }
@@ -734,6 +942,7 @@ fn row_to_save(row: &Row) -> rusqlite::Result<Save> {
         last_checked_at: row.get(12)?,
         thumbnail: row.get(13)?,
         archived_at: row.get(14)?,
+        is_read: row.get(15)?,
     })
 }
 

@@ -13,6 +13,8 @@ pub enum Error {
     NotFound(i64),
     #[error("invalid url: {0}")]
     InvalidUrl(String),
+    #[error("{0}")]
+    Conflict(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
