@@ -21,6 +21,7 @@ export interface Save {
   createdAt: number;
   updatedAt: number;
   lastCheckedAt: number | null;
+  archivedAt: number | null;
 }
 
 export interface NewSave {

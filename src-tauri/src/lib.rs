@@ -132,6 +132,7 @@ pub fn run() {
             commands::set_tags,
             commands::delete_save,
             commands::list_tags,
+            commands::get_archive,
             commands::vault_stats,
             commands::vault_path,
             commands::check_save_now,

@@ -26,6 +26,7 @@
 //! ```
 
 pub mod error;
+pub mod extract;
 pub mod import;
 pub mod models;
 pub mod monitor;

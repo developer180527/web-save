@@ -82,6 +82,12 @@ pub fn list_tags(vault: VaultState) -> Result<Vec<TagCount>, String> {
     vault.list_tags().map_err(err)
 }
 
+/// The archived readable text of a save, if a snapshot exists.
+#[tauri::command]
+pub fn get_archive(vault: VaultState, id: i64) -> Result<Option<String>, String> {
+    vault.archive_text(id).map_err(err)
+}
+
 #[tauri::command]
 pub fn vault_stats(vault: VaultState) -> Result<VaultStats, String> {
     vault.stats().map_err(err)

@@ -221,7 +221,7 @@ pub(crate) fn attr(tag: &str, name: &str) -> Option<String> {
     None
 }
 
-fn decode_entities(s: &str) -> String {
+pub(crate) fn decode_entities(s: &str) -> String {
     s.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")

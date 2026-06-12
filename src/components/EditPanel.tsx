@@ -27,6 +27,15 @@ export default function EditPanel({
   const [tagsInput, setTagsInput] = useState(save.tags.join(", "));
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [archiveText, setArchiveText] = useState<string | null>(null);
+
+  async function handleViewArchive() {
+    try {
+      setArchiveText(await api.getArchive(save.id));
+    } catch (e) {
+      onError(String(e));
+    }
+  }
 
   // Re-seed local fields when a different save is selected.
   useEffect(() => {
@@ -105,6 +114,18 @@ export default function EditPanel({
           </div>
         )}
 
+        {save.archivedAt != null && (
+          <div className="edit-archive-row">
+            <span>
+              Archived copy · {relativeTime(save.archivedAt)} — searchable
+              even if the site goes down
+            </span>
+            <button className="btn btn-subtle" onClick={handleViewArchive}>
+              View
+            </button>
+          </div>
+        )}
+
         <label className="field">
           <span>Title</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -143,6 +164,29 @@ export default function EditPanel({
           <span>Updated {relativeTime(save.updatedAt)}</span>
         </div>
       </div>
+
+      {archiveText !== null && (
+        <div className="modal-overlay" onClick={() => setArchiveText(null)}>
+          <div
+            className="modal modal-wide"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>Archived text</h2>
+              <button
+                className="icon-btn"
+                onClick={() => setArchiveText(null)}
+                title="Close"
+              >
+                <XIcon size={15} />
+              </button>
+            </div>
+            <div className="archive-text selectable">
+              {archiveText || "No archived text for this save yet."}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="edit-actions">
         <button

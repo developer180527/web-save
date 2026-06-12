@@ -74,11 +74,49 @@ CREATE TRIGGER saves_fts_update AFTER UPDATE ON saves BEGIN
 END;
 "#,
     // v2: cached cover images (og:image), stored under assets/thumbs/.
-    "ALTER TABLE saves ADD COLUMN thumbnail TEXT NOT NULL DEFAULT '';"];
+    "ALTER TABLE saves ADD COLUMN thumbnail TEXT NOT NULL DEFAULT '';",
+    // v3: archived readable text, searchable via a rebuilt FTS index with
+    // an extra `archive` column.
+    r#"
+ALTER TABLE saves ADD COLUMN archive_text TEXT NOT NULL DEFAULT '';
+ALTER TABLE saves ADD COLUMN archived_at INTEGER;
+
+DROP TRIGGER saves_fts_insert;
+DROP TRIGGER saves_fts_delete;
+DROP TRIGGER saves_fts_update;
+DROP TABLE saves_fts;
+
+CREATE VIRTUAL TABLE saves_fts USING fts5(
+    title, url, description, notes, tags, archive,
+    content='saves',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER saves_fts_insert AFTER INSERT ON saves BEGIN
+    INSERT INTO saves_fts(rowid, title, url, description, notes, tags, archive)
+    VALUES (new.id, new.title, new.url, new.description, new.notes, new.tags_text, new.archive_text);
+END;
+
+CREATE TRIGGER saves_fts_delete AFTER DELETE ON saves BEGIN
+    INSERT INTO saves_fts(saves_fts, rowid, title, url, description, notes, tags, archive)
+    VALUES ('delete', old.id, old.title, old.url, old.description, old.notes, old.tags_text, old.archive_text);
+END;
+
+CREATE TRIGGER saves_fts_update AFTER UPDATE ON saves BEGIN
+    INSERT INTO saves_fts(saves_fts, rowid, title, url, description, notes, tags, archive)
+    VALUES ('delete', old.id, old.title, old.url, old.description, old.notes, old.tags_text, old.archive_text);
+    INSERT INTO saves_fts(rowid, title, url, description, notes, tags, archive)
+    VALUES (new.id, new.title, new.url, new.description, new.notes, new.tags_text, new.archive_text);
+END;
+
+INSERT INTO saves_fts(rowid, title, url, description, notes, tags, archive)
+SELECT id, title, url, description, notes, tags_text, archive_text FROM saves;
+"#];
 
 const SAVE_COLS: &str = "s.id, s.url, s.title, s.description, s.notes, s.favicon_url, s.favorite, \
      s.status, s.redirect_url, s.http_status, s.created_at, s.updated_at, s.last_checked_at, \
-     s.thumbnail";
+     s.thumbnail, s.archived_at";
 
 /// Subdirectory of the assets dir holding cached cover images.
 pub const THUMBS_DIR: &str = "thumbs";
@@ -207,7 +245,9 @@ impl Vault {
             sql.push_str(&where_clauses.join(" AND "));
         }
         sql.push_str(if fts.is_some() {
-            " ORDER BY saves_fts.rank"
+            // Weighted relevance: user-authored fields (title, notes, tags)
+            // outrank deep matches inside archived page text.
+            " ORDER BY bm25(saves_fts, 12.0, 6.0, 4.0, 8.0, 10.0, 1.0)"
         } else {
             " ORDER BY s.created_at DESC, s.id DESC"
         });
@@ -469,6 +509,20 @@ impl Vault {
         Ok(report)
     }
 
+    /// The archived readable text of a save, if a snapshot exists.
+    pub fn archive_text(&self, id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let text: String = conn
+            .query_row(
+                "SELECT archive_text FROM saves WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or(Error::NotFound(id))?;
+        Ok((!text.is_empty()).then_some(text))
+    }
+
     // ---- link monitoring ----
 
     /// Saves whose last check is older than `max_age_secs` (or never checked),
@@ -503,19 +557,28 @@ impl Vault {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
+        // Empty extracted text is not an archive — don't clobber a previous
+        // good snapshot with it.
+        let archive = outcome
+            .archive_text
+            .as_deref()
+            .filter(|t| !t.trim().is_empty());
         let changed = conn.execute(
             "UPDATE saves SET
                 status = ?1,
                 http_status = ?2,
                 redirect_url = COALESCE(?3, redirect_url),
                 content_hash = COALESCE(?4, content_hash),
-                last_checked_at = ?5
-             WHERE id = ?6",
+                archive_text = COALESCE(?5, archive_text),
+                archived_at = CASE WHEN ?5 IS NOT NULL THEN ?6 ELSE archived_at END,
+                last_checked_at = ?6
+             WHERE id = ?7",
             params![
                 outcome.status.as_str(),
                 outcome.http_status.map(i64::from),
                 outcome.redirect_url,
                 outcome.content_hash,
+                archive,
                 now(),
                 id
             ],
@@ -670,6 +733,7 @@ fn row_to_save(row: &Row) -> rusqlite::Result<Save> {
         updated_at: row.get(11)?,
         last_checked_at: row.get(12)?,
         thumbnail: row.get(13)?,
+        archived_at: row.get(14)?,
     })
 }
 

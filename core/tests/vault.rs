@@ -179,6 +179,7 @@ fn filters_favorites_tags_and_status() {
                 redirect_url: None,
                 content_hash: None,
                 og_image: None,
+                archive_text: None,
             },
         )
         .unwrap();
@@ -213,6 +214,7 @@ fn due_for_check_orders_by_staleness_and_respects_age() {
                 redirect_url: Some(String::new()),
                 content_hash: Some("abc".into()),
                 og_image: None,
+                archive_text: None,
             },
         )
         .unwrap();
@@ -240,4 +242,62 @@ fn delete_removes_save_and_index_entry() {
     assert!(hits.is_empty(), "FTS index entry removed");
     assert!(vault.list_tags().unwrap().is_empty(), "orphan tag removed");
     assert!(matches!(vault.delete_save(s.id), Err(Error::NotFound(_))));
+}
+
+#[test]
+fn archive_snapshot_is_stored_and_searchable() {
+    let (_dir, vault) = vault();
+    let s = save(&vault, "https://blog.example/wal", "A blog post", &[]);
+    assert_eq!(s.archived_at, None);
+    assert_eq!(vault.archive_text(s.id).unwrap(), None);
+
+    vault
+        .apply_check(
+            s.id,
+            &websave_core::CheckOutcome {
+                status: LinkStatus::Active,
+                http_status: Some(200),
+                redirect_url: Some(String::new()),
+                content_hash: Some("h1".into()),
+                og_image: None,
+                archive_text: Some(
+                    "SQLite write-ahead logging lets readers and writers coexist".into(),
+                ),
+            },
+        )
+        .unwrap();
+
+    let updated = vault.get_save(s.id).unwrap();
+    assert!(updated.archived_at.is_some(), "archived_at recorded");
+    assert!(vault
+        .archive_text(s.id)
+        .unwrap()
+        .unwrap()
+        .contains("write-ahead"));
+
+    // Found by words that exist only in the page content.
+    let hits = vault
+        .list_saves(&ListQuery {
+            query: Some("write-ahead logging".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, s.id);
+
+    // A later check with empty extraction must not clobber the archive.
+    vault
+        .apply_check(
+            s.id,
+            &websave_core::CheckOutcome {
+                status: LinkStatus::Active,
+                http_status: Some(200),
+                redirect_url: Some(String::new()),
+                content_hash: Some("h2".into()),
+                og_image: None,
+                archive_text: Some("   ".into()),
+            },
+        )
+        .unwrap();
+    assert!(vault.archive_text(s.id).unwrap().is_some(), "kept");
 }

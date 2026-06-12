@@ -62,6 +62,9 @@ pub struct Save {
     pub created_at: i64,
     pub updated_at: i64,
     pub last_checked_at: Option<i64>,
+    /// When a readable-text archive snapshot was last stored, if ever.
+    /// The text itself is fetched separately — it can be large.
+    pub archived_at: Option<i64>,
 }
 
 /// Input for capturing a page (from the extension, UI, or any other client).

@@ -96,4 +96,6 @@ next to the engine binary, or the in-repo dev build.
 - [x] Phase 2 — Chrome extension (right-click capture → desktop app)
 - [x] Phase 3 — tray quick access: native SwiftUI menubar app on macOS
       (UniFFI → websave-core); webview popover + native menu on Windows/Linux
-- [ ] Later — thumbnails in `assets/`, import/export, Noter plugin packaging
+- [x] Thumbnails (og:image + extension screenshots), bookmark import,
+      archive snapshots (searchable readable-text copies of saved pages)
+- [ ] Later — export, keyboard layer, read/unread, Noter plugin packaging

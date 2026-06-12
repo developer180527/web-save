@@ -34,6 +34,8 @@ pub struct CheckOutcome {
     pub content_hash: Option<String>,
     /// Cover image URL (og:image and friends) found in the page, absolute.
     pub og_image: Option<String>,
+    /// Readable text extracted from the page, for the archive snapshot.
+    pub archive_text: Option<String>,
 }
 
 /// Probe a URL and classify it.
@@ -96,10 +98,14 @@ fn probe(
                 .take(MAX_BODY_BYTES)
                 .read_to_end(&mut body);
             let hash = hex_sha256(&body);
-            let og_image = if is_html {
-                extract_og_image(&String::from_utf8_lossy(&body), &final_url)
+            let (og_image, archive_text) = if is_html {
+                let html = String::from_utf8_lossy(&body);
+                (
+                    extract_og_image(&html, &final_url),
+                    Some(crate::extract::extract_readable_text(&html)),
+                )
             } else {
-                None
+                (None, None)
             };
             let status = if (300..400).contains(&code) || redirected {
                 LinkStatus::Redirected
@@ -114,6 +120,7 @@ fn probe(
                 redirect_url: Some(if redirected { final_url } else { String::new() }),
                 content_hash: Some(hash),
                 og_image,
+                archive_text,
             }
         }
         Err(ureq::Error::Status(code, resp)) => {
@@ -135,6 +142,7 @@ fn probe(
                 redirect_url: Some(if redirected { final_url } else { String::new() }),
                 content_hash: None,
                 og_image: None,
+                archive_text: None,
             }
         }
         Err(_) => CheckOutcome {
@@ -143,6 +151,7 @@ fn probe(
             redirect_url: None,
             content_hash: None,
             og_image: None,
+            archive_text: None,
         },
     }
 }

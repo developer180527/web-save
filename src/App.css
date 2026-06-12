@@ -1269,3 +1269,33 @@ input:focus:not(:focus-visible) {
 .grid-card .save-description {
   -webkit-line-clamp: 2;
 }
+
+/* ---------- archive viewer ---------- */
+
+.edit-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.modal-wide {
+  width: 600px;
+}
+
+.archive-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  padding: 4px 2px;
+}
