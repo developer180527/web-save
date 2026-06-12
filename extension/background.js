@@ -56,6 +56,9 @@ async function pagePayload(tab, selection) {
     title: tab?.title ?? "",
     faviconUrl: tab?.favIconUrl ?? "",
   };
+  // Pages that declare a cover image (og:image) get it fetched by the app;
+  // for the rest we screenshot the visible tab so every card has an image.
+  let hasCover = false;
   // Best effort: not available on chrome://, web store, PDFs, etc.
   try {
     const [result] = await chrome.scripting.executeScript({
@@ -65,9 +68,20 @@ async function pagePayload(tab, selection) {
     if (result?.result) {
       payload.description = result.result.description;
       payload.faviconUrl = payload.faviconUrl || result.result.favicon;
+      hasCover = result.result.hasCover;
     }
   } catch {
     // ignore — payload still has url/title
+  }
+  if (!hasCover) {
+    try {
+      payload.screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "jpeg",
+        quality: 75,
+      });
+    } catch {
+      // ignore — capture can fail on protected pages
+    }
   }
   if (selection) payload.description = selection;
   return payload;
@@ -91,6 +105,11 @@ function scrapeMeta() {
   return {
     description: meta?.getAttribute("content")?.trim() ?? "",
     favicon,
+    hasCover: !!document.querySelector(
+      'meta[property="og:image"], meta[name="og:image"], ' +
+        'meta[name="twitter:image"], meta[property="twitter:image"], ' +
+        'meta[name="twitter:image:src"]',
+    ),
   };
 }
 
@@ -130,9 +149,11 @@ async function post(payload) {
 
 async function enqueue(payload) {
   const { [QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(QUEUE_KEY);
-  // Drop duplicates of the same URL already waiting.
-  const next = queue.filter((p) => p.url !== payload.url);
-  next.push(payload);
+  // Drop duplicates of the same URL already waiting, and shed screenshots —
+  // base64 images would blow through the storage quota.
+  const { screenshot: _dropped, ...slim } = payload;
+  const next = queue.filter((p) => p.url !== slim.url);
+  next.push(slim);
   await chrome.storage.local.set({ [QUEUE_KEY]: next.slice(-QUEUE_LIMIT) });
 }
 

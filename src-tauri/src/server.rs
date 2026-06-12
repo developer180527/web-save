@@ -19,7 +19,19 @@ use websave_core::{NewSave, Vault};
 
 pub const CAPTURE_ADDR: &str = "127.0.0.1:38917";
 const CLIENT_HEADER: &str = "x-websave-client";
-const MAX_BODY_BYTES: u64 = 256 * 1024;
+// Generous cap: payloads may carry a base64 viewport screenshot.
+const MAX_BODY_BYTES: u64 = 12 * 1024 * 1024;
+const MAX_SCREENSHOT_BYTES: usize = 6 * 1024 * 1024;
+
+/// What the extension POSTs: a NewSave plus an optional viewport screenshot
+/// (data URL), sent only when the page declares no cover image of its own.
+#[derive(serde::Deserialize)]
+struct CapturePayload {
+    #[serde(flatten)]
+    save: NewSave,
+    #[serde(default)]
+    screenshot: Option<String>,
+}
 
 pub fn spawn(app: AppHandle, vault: Arc<Vault>) {
     std::thread::spawn(move || {
@@ -80,13 +92,24 @@ fn handle(
             {
                 return json(400, r#"{"error":"unreadable body"}"#.into());
             }
-            let new_save: NewSave = match serde_json::from_str(&body) {
+            let payload: CapturePayload = match serde_json::from_str(&body) {
                 Ok(n) => n,
                 Err(e) => return json(400, format!(r#"{{"error":"invalid json: {e}"}}"#)),
             };
 
-            match vault.add_save(new_save) {
-                Ok(save) => {
+            match vault.add_save(payload.save) {
+                Ok(mut save) => {
+                    // Screenshot fallback: only fills the gap, never replaces
+                    // an existing cover.
+                    if save.thumbnail.is_empty() {
+                        if let Some((bytes, ext)) =
+                            payload.screenshot.as_deref().and_then(decode_data_url)
+                        {
+                            if let Ok(path) = vault.set_thumbnail(save.id, &bytes, ext) {
+                                save.thumbnail = path;
+                            }
+                        }
+                    }
                     let _ = app.emit("saves-updated", ());
                     crate::wake_monitor(app);
                     match serde_json::to_string(&save) {
@@ -102,6 +125,24 @@ fn handle(
         }
         _ => json(404, r#"{"error":"not found"}"#.into()),
     }
+}
+
+/// `data:image/jpeg;base64,...` → (bytes, extension), with mime and size
+/// validation.
+fn decode_data_url(data_url: &str) -> Option<(Vec<u8>, &'static str)> {
+    use base64::Engine;
+    let rest = data_url.strip_prefix("data:")?;
+    let (mime, b64) = rest.split_once(";base64,")?;
+    let ext = match mime.to_ascii_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => return None,
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .ok()?;
+    (!bytes.is_empty() && bytes.len() <= MAX_SCREENSHOT_BYTES).then_some((bytes, ext))
 }
 
 fn json(status: u16, body: String) -> Response<std::io::Cursor<Vec<u8>>> {

@@ -23,6 +23,15 @@ interface Props {
   onPickTag: (tag: string) => void;
 }
 
+/** Stable hue derived from the hostname, so every site gets its own color. */
+function hostHue(host: string): number {
+  let h = 0;
+  for (let i = 0; i < host.length; i++) {
+    h = (h * 31 + host.charCodeAt(i)) % 360;
+  }
+  return h;
+}
+
 function Thumbnail({ save, vaultPath }: { save: Save; vaultPath: string }) {
   const [failed, setFailed] = useState(false);
   if (save.thumbnail && vaultPath && !failed) {
@@ -36,10 +45,19 @@ function Thumbnail({ save, vaultPath }: { save: Save; vaultPath: string }) {
       />
     );
   }
+  const host = hostOf(save.url);
+  const hue = hostHue(host);
   return (
-    <div className="card-thumb card-thumb-fallback">
+    <div
+      className="card-thumb card-thumb-fallback"
+      style={{
+        background: `linear-gradient(135deg,
+          hsl(${hue} 42% 30%),
+          hsl(${(hue + 45) % 360} 50% 18%))`,
+      }}
+    >
       <Favicon save={save} />
-      <span className="card-thumb-host">{hostOf(save.url)}</span>
+      <span className="card-thumb-host">{host}</span>
     </div>
   );
 }
