@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Save } from "../types";
 import { hostOf, relativeTime, STATUS_LABELS } from "../utils";
+import {
+  DotsIcon,
+  ExternalIcon,
+  PencilIcon,
+  StarIcon,
+  TrashIcon,
+} from "./Icons";
 
 interface Props {
   save: Save;
   selected: boolean;
+  variant: "list" | "card";
+  /** Vault root path, needed to resolve cached thumbnails. */
+  vaultPath: string;
   onOpen: (save: Save) => void;
   onEdit: (save: Save) => void;
   onDelete: (save: Save) => void;
@@ -12,7 +23,28 @@ interface Props {
   onPickTag: (tag: string) => void;
 }
 
-function Favicon({ save }: { save: Save }) {
+function Thumbnail({ save, vaultPath }: { save: Save; vaultPath: string }) {
+  const [failed, setFailed] = useState(false);
+  if (save.thumbnail && vaultPath && !failed) {
+    return (
+      <img
+        className="card-thumb"
+        src={convertFileSrc(`${vaultPath}/assets/${save.thumbnail}`)}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div className="card-thumb card-thumb-fallback">
+      <Favicon save={save} />
+      <span className="card-thumb-host">{hostOf(save.url)}</span>
+    </div>
+  );
+}
+
+export function Favicon({ save }: { save: Save }) {
   const [failed, setFailed] = useState(false);
   const src =
     save.faviconUrl ||
@@ -35,6 +67,8 @@ function Favicon({ save }: { save: Save }) {
 export default function SaveCard({
   save,
   selected,
+  variant,
+  vaultPath,
   onOpen,
   onEdit,
   onDelete,
@@ -56,11 +90,15 @@ export default function SaveCard({
 
   return (
     <article
-      className={`save-card ${selected ? "selected" : ""}`}
+      className={`save-card ${variant === "card" ? "grid-card" : ""} ${selected ? "selected" : ""}`}
       title={save.url}
       onClick={() => onOpen(save)}
     >
-      <Favicon save={save} />
+      {variant === "card" ? (
+        <Thumbnail save={save} vaultPath={vaultPath} />
+      ) : (
+        <Favicon save={save} />
+      )}
       <div className="save-body">
         <div className="save-title-row">
           <span className="save-title">{save.title || hostOf(save.url)}</span>
@@ -109,7 +147,7 @@ export default function SaveCard({
           title={save.favorite ? "Remove from favorites" : "Add to favorites"}
           onClick={() => onToggleFavorite(save)}
         >
-          {save.favorite ? "★" : "☆"}
+          <StarIcon size={16} filled={save.favorite} />
         </button>
         <div className="menu-wrap">
           <button
@@ -117,21 +155,21 @@ export default function SaveCard({
             title="More options"
             onClick={() => setMenuOpen((v) => !v)}
           >
-            ⋯
+            <DotsIcon size={16} />
           </button>
           {menuOpen && (
             <div className="menu">
               <button className="menu-item" onClick={() => onEdit(save)}>
-                Edit details
+                <PencilIcon size={14} /> Edit details
               </button>
               <button className="menu-item" onClick={() => onOpen(save)}>
-                Open in browser
+                <ExternalIcon size={14} /> Open in browser
               </button>
               <button
                 className="menu-item menu-item-danger"
                 onClick={() => onDelete(save)}
               >
-                Delete
+                <TrashIcon size={14} /> Delete
               </button>
             </div>
           )}

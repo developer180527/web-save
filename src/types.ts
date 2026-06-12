@@ -12,6 +12,7 @@ export interface Save {
   description: string;
   notes: string;
   faviconUrl: string;
+  thumbnail: string;
   favorite: boolean;
   status: LinkStatus;
   redirectUrl: string;
@@ -49,6 +50,17 @@ export interface ListQuery {
 export interface TagCount {
   name: string;
   count: number;
+}
+
+export interface ImportReport {
+  total: number;
+  new: number;
+  existing: number;
+  invalid: number;
+}
+
+export interface ImportPreview extends ImportReport {
+  format: string;
 }
 
 export interface VaultStats {

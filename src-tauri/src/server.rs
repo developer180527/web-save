@@ -50,6 +50,17 @@ fn handle(
             200,
             format!(r#"{{"app":"websave","version":"{}"}}"#, env!("CARGO_PKG_VERSION")),
         ),
+        // Used by the native menubar app: raise the main window.
+        (Method::Get, "/show") => {
+            crate::tray::show_main(app);
+            json(200, r#"{"ok":true}"#.into())
+        }
+        // Used by the native menubar app after it writes to the vault, so
+        // the engine's windows refresh immediately.
+        (Method::Get, "/reload") => {
+            let _ = app.emit("saves-updated", ());
+            json(200, r#"{"ok":true}"#.into())
+        }
         (Method::Post, "/save") => {
             let has_client_header = request
                 .headers()
@@ -77,6 +88,7 @@ fn handle(
             match vault.add_save(new_save) {
                 Ok(save) => {
                     let _ = app.emit("saves-updated", ());
+                    crate::wake_monitor(app);
                     match serde_json::to_string(&save) {
                         Ok(s) => json(200, s),
                         Err(e) => json(500, format!(r#"{{"error":"{e}"}}"#)),

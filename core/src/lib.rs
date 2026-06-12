@@ -26,11 +26,13 @@
 //! ```
 
 pub mod error;
+pub mod import;
 pub mod models;
 pub mod monitor;
 mod vault;
 
 pub use error::{Error, Result};
+pub use import::{ImportFormat, ImportItem, ImportReport};
 pub use models::{LinkStatus, ListQuery, NewSave, Save, SavePatch, TagCount, VaultStats};
 pub use monitor::{check_url, CheckOutcome, CheckTarget};
-pub use vault::{Vault, ASSETS_DIR, DB_FILE};
+pub use vault::{Vault, ASSETS_DIR, DB_FILE, THUMBS_DIR};

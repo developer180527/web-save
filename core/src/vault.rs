@@ -7,6 +7,7 @@ use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Row};
 
 use crate::error::{Error, Result};
+use crate::import::{ImportItem, ImportReport};
 use crate::models::{LinkStatus, ListQuery, NewSave, Save, SavePatch, TagCount, VaultStats};
 use crate::monitor::{self, CheckOutcome, CheckTarget};
 
@@ -71,10 +72,16 @@ CREATE TRIGGER saves_fts_update AFTER UPDATE ON saves BEGIN
     INSERT INTO saves_fts(rowid, title, url, description, notes, tags)
     VALUES (new.id, new.title, new.url, new.description, new.notes, new.tags_text);
 END;
-"#];
+"#,
+    // v2: cached cover images (og:image), stored under assets/thumbs/.
+    "ALTER TABLE saves ADD COLUMN thumbnail TEXT NOT NULL DEFAULT '';"];
 
 const SAVE_COLS: &str = "s.id, s.url, s.title, s.description, s.notes, s.favicon_url, s.favorite, \
-     s.status, s.redirect_url, s.http_status, s.created_at, s.updated_at, s.last_checked_at";
+     s.status, s.redirect_url, s.http_status, s.created_at, s.updated_at, s.last_checked_at, \
+     s.thumbnail";
+
+/// Subdirectory of the assets dir holding cached cover images.
+pub const THUMBS_DIR: &str = "thumbs";
 
 /// A portable bookmark vault: a directory holding the SQLite database and
 /// optional local assets (thumbnails, etc.). All storage, search and
@@ -105,6 +112,11 @@ impl Vault {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Absolute path of the assets directory (thumbnails etc.).
+    pub fn assets_dir(&self) -> PathBuf {
+        self.root.join(ASSETS_DIR)
     }
 
     /// Insert a capture, or refresh metadata if the URL is already saved.
@@ -341,6 +353,122 @@ impl Vault {
         Ok(stats)
     }
 
+    // ---- import ----
+
+    /// Dry-run: counts what an import would do, without writing anything.
+    pub fn preview_import(&self, items: &[ImportItem]) -> Result<ImportReport> {
+        let conn = self.conn.lock().unwrap();
+        let mut report = ImportReport {
+            total: items.len() as u32,
+            ..Default::default()
+        };
+        let mut stmt = conn.prepare("SELECT 1 FROM saves WHERE url = ?1")?;
+        for item in items {
+            match normalize_url(&item.url) {
+                Err(_) => report.invalid += 1,
+                Ok(url) => {
+                    if stmt.exists(params![url])? {
+                        report.existing += 1;
+                    } else {
+                        report.new += 1;
+                    }
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    /// Merge parsed bookmarks into the vault in one transaction.
+    ///
+    /// Import never destroys user data: existing saves only get empty
+    /// fields filled in, tags are unioned, `favorite` is sticky once set,
+    /// and `created_at` keeps the earliest known save date.
+    pub fn import_items(&self, items: &[ImportItem]) -> Result<ImportReport> {
+        let mut report = ImportReport {
+            total: items.len() as u32,
+            ..Default::default()
+        };
+        let now = now();
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        for item in items {
+            let Ok(url) = normalize_url(&item.url) else {
+                report.invalid += 1;
+                continue;
+            };
+            let existing: Option<i64> = tx
+                .query_row("SELECT id FROM saves WHERE url = ?1", params![url], |r| {
+                    r.get(0)
+                })
+                .optional()?;
+
+            let id = match existing {
+                Some(id) => {
+                    tx.execute(
+                        "UPDATE saves SET
+                            title = CASE WHEN title = '' THEN ?1 ELSE title END,
+                            description = CASE WHEN description = '' THEN ?2 ELSE description END,
+                            notes = CASE WHEN notes = '' THEN ?3 ELSE notes END,
+                            favorite = MAX(favorite, ?4),
+                            created_at = MIN(created_at, COALESCE(?5, created_at)),
+                            updated_at = ?6
+                         WHERE id = ?7",
+                        params![
+                            item.title,
+                            item.description,
+                            item.notes,
+                            item.favorite,
+                            item.created_at,
+                            now,
+                            id
+                        ],
+                    )?;
+                    report.existing += 1;
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO saves
+                            (url, title, description, notes, favorite, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                        params![
+                            url,
+                            item.title,
+                            item.description,
+                            item.notes,
+                            item.favorite,
+                            item.created_at.unwrap_or(now),
+                            now
+                        ],
+                    )?;
+                    report.new += 1;
+                    tx.last_insert_rowid()
+                }
+            };
+
+            if !item.tags.is_empty() {
+                let mut tags = tags_for(&tx, id)?;
+                for tag in &item.tags {
+                    if !tags.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+                        tags.push(tag.clone());
+                    }
+                }
+                set_tags_on(&tx, id, &tags)?;
+            }
+        }
+
+        tx.commit()?;
+        log::info!(
+            "import: {} new, {} merged, {} invalid (of {})",
+            report.new,
+            report.existing,
+            report.invalid,
+            report.total
+        );
+        Ok(report)
+    }
+
     // ---- link monitoring ----
 
     /// Saves whose last check is older than `max_age_secs` (or never checked),
@@ -409,6 +537,55 @@ impl Vault {
         Ok(())
     }
 
+    /// Store a downloaded cover image under `assets/thumbs/` and point the
+    /// save at it.
+    pub fn set_thumbnail(&self, id: i64, bytes: &[u8], ext: &str) -> Result<String> {
+        let dir = self.root.join(ASSETS_DIR).join(THUMBS_DIR);
+        fs::create_dir_all(&dir).map_err(|source| Error::Io {
+            path: dir.clone(),
+            source,
+        })?;
+        let relative = format!("{THUMBS_DIR}/{id}.{ext}");
+        let path = self.root.join(ASSETS_DIR).join(&relative);
+        fs::write(&path, bytes).map_err(|source| Error::Io { path, source })?;
+
+        let conn = self.conn.lock().unwrap();
+        let changed = conn.execute(
+            "UPDATE saves SET thumbnail = ?1 WHERE id = ?2",
+            params![relative, id],
+        )?;
+        if changed == 0 {
+            return Err(Error::NotFound(id));
+        }
+        log::debug!("thumbnail: cached {relative}");
+        Ok(relative)
+    }
+
+    /// Download and cache a cover image for a save that doesn't have one
+    /// yet. Best-effort: failures are logged and ignored.
+    pub fn maybe_fetch_thumbnail(&self, id: i64, og_image: Option<&str>) {
+        let Some(og_image) = og_image else { return };
+        let has_thumb: Option<String> = {
+            let conn = self.conn.lock().unwrap();
+            conn.query_row(
+                "SELECT thumbnail FROM saves WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten()
+        };
+        if !matches!(has_thumb.as_deref(), Some("")) {
+            return; // missing save, or already has a thumbnail
+        }
+        if let Some((bytes, ext)) = monitor::download_image(og_image) {
+            if let Err(e) = self.set_thumbnail(id, &bytes, ext) {
+                log::warn!("thumbnail: failed to store for #{id}: {e}");
+            }
+        }
+    }
+
     /// Check a single save right now (blocking network call) and persist the result.
     pub fn check_save(&self, id: i64) -> Result<Save> {
         let target = {
@@ -429,6 +606,7 @@ impl Vault {
         };
         let outcome = monitor::check_url(&target.url, &target.content_hash);
         self.apply_check(id, &outcome)?;
+        self.maybe_fetch_thumbnail(id, outcome.og_image.as_deref());
         self.get_save(id)
     }
 }
@@ -491,6 +669,7 @@ fn row_to_save(row: &Row) -> rusqlite::Result<Save> {
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
         last_checked_at: row.get(12)?,
+        thumbnail: row.get(13)?,
     })
 }
 

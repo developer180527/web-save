@@ -178,6 +178,7 @@ fn filters_favorites_tags_and_status() {
                 http_status: Some(404),
                 redirect_url: None,
                 content_hash: None,
+                og_image: None,
             },
         )
         .unwrap();
@@ -211,6 +212,7 @@ fn due_for_check_orders_by_staleness_and_respects_age() {
                 http_status: Some(200),
                 redirect_url: Some(String::new()),
                 content_hash: Some("abc".into()),
+                og_image: None,
             },
         )
         .unwrap();

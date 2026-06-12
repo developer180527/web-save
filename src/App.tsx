@@ -6,7 +6,12 @@ import type { ListQuery, Save, TagCount, VaultStats } from "./types";
 import Sidebar, { type View } from "./components/Sidebar";
 import SaveCard from "./components/SaveCard";
 import EditPanel from "./components/EditPanel";
-import SettingsPage, { type Theme } from "./components/SettingsPage";
+import SettingsPage, {
+  MENUBAR_AUTOLAUNCH_KEY,
+  type Theme,
+} from "./components/SettingsPage";
+import ImportDialog from "./components/ImportDialog";
+import { GridIcon, ImportIcon, ListIcon, PlusIcon } from "./components/Icons";
 import "./App.css";
 
 const MIN_SIDEBAR = 180;
@@ -25,6 +30,33 @@ function App() {
   const [rechecking, setRechecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<"library" | "settings">("library");
+  const [importOpen, setImportOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [vaultDir, setVaultDir] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "cards">(
+    () => (localStorage.getItem("viewMode") as "list" | "cards") || "list",
+  );
+  useEffect(() => {
+    localStorage.setItem("viewMode", viewMode);
+  }, [viewMode]);
+  useEffect(() => {
+    api.vaultPath().then(setVaultDir).catch(() => {});
+  }, []);
+
+  // The add popover closes on Escape or any outside click.
+  useEffect(() => {
+    if (!addOpen) return;
+    const onClick = () => setAddOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAddOpen(false);
+    };
+    window.addEventListener("click", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [addOpen]);
 
   const [theme, setTheme] = useState<Theme>(
     () => (localStorage.getItem("theme") as Theme) || "system",
@@ -86,6 +118,18 @@ function App() {
     return () => clearTimeout(timer);
   }, [refresh]);
 
+  // Bring the macOS menubar companion up alongside the engine, if enabled.
+  useEffect(() => {
+    if (
+      navigator.userAgent.includes("Mac") &&
+      localStorage.getItem(MENUBAR_AUTOLAUNCH_KEY) === "true"
+    ) {
+      api.launchMenubarApp().catch(() => {
+        // Not installed/built yet — settings has the button and the hint.
+      });
+    }
+  }, []);
+
   // Background monitor (and future capture clients) signal through this event.
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
@@ -112,6 +156,7 @@ function App() {
         url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
       });
       setAddUrl("");
+      setAddOpen(false);
       setSelected(save);
       setError(null);
       await refresh();
@@ -214,17 +259,55 @@ function App() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <form className="add-form" onSubmit={handleAdd}>
-              <input
-                className="add-input"
-                placeholder="Paste a URL to save…"
-                value={addUrl}
-                onChange={(e) => setAddUrl(e.target.value)}
-              />
-              <button className="btn btn-primary" disabled={adding}>
-                {adding ? "Adding…" : "Add"}
+            <div className="view-toggle">
+              <button
+                className={`icon-btn ${viewMode === "list" ? "active" : ""}`}
+                title="List view"
+                onClick={() => setViewMode("list")}
+              >
+                <ListIcon size={16} />
               </button>
-            </form>
+              <button
+                className={`icon-btn ${viewMode === "cards" ? "active" : ""}`}
+                title="Card view"
+                onClick={() => setViewMode("cards")}
+              >
+                <GridIcon size={16} />
+              </button>
+            </div>
+            <button
+              className="btn"
+              title="Import bookmarks from a browser, Raindrop or Pocket"
+              onClick={() => setImportOpen(true)}
+            >
+              <ImportIcon size={15} /> Import
+            </button>
+            <div className="add-wrap" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="btn btn-primary"
+                title="Save a URL"
+                onClick={() => setAddOpen((v) => !v)}
+              >
+                <PlusIcon size={15} /> Add
+              </button>
+              {addOpen && (
+                <form className="add-popover" onSubmit={handleAdd}>
+                  <input
+                    autoFocus
+                    className="add-input"
+                    placeholder="Paste a URL to save…"
+                    value={addUrl}
+                    onChange={(e) => setAddUrl(e.target.value)}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    disabled={adding || !addUrl.trim()}
+                  >
+                    {adding ? "Saving…" : "Save"}
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
 
           {error && (
@@ -245,12 +328,14 @@ function App() {
             </div>
           )}
 
-          <div className="save-list">
+          <div className={viewMode === "cards" ? "save-grid" : "save-list"}>
             {saves.map((save) => (
               <SaveCard
                 key={save.id}
                 save={save}
                 selected={selected?.id === save.id}
+                variant={viewMode === "cards" ? "card" : "list"}
+                vaultPath={vaultDir}
                 onOpen={handleOpen}
                 onEdit={setSelected}
                 onDelete={handleDelete}
@@ -267,6 +352,15 @@ function App() {
             )}
           </div>
         </main>
+      )}
+
+      {importOpen && (
+        <ImportDialog
+          onClose={() => {
+            setImportOpen(false);
+            refresh();
+          }}
+        />
       )}
 
       {showPanel && selected && (

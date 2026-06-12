@@ -10,8 +10,10 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "WebSave",
         "width": 1150,
         "height": 760,
@@ -20,7 +22,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/vault/assets/**"]
+      }
     }
   },
   "bundle": {

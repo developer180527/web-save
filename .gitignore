@@ -17,6 +17,10 @@ dist-ssr
 # Rust
 /target
 
+# macOS menubar app build artifacts (built via `npm run menubar`)
+macos-menubar/dist
+macos-menubar/Generated
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

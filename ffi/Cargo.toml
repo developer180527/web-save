@@ -1,0 +1,18 @@
+[package]
+name = "websave-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "FFI bindings (UniFFI) over websave-core for native hosts: the SwiftUI menubar app today, iOS/Android tomorrow."
+
+[lib]
+name = "websave_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+websave-core = { path = "../core" }
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = "1"

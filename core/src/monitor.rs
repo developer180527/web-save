@@ -9,6 +9,12 @@ use crate::models::LinkStatus;
 const MAX_BODY_BYTES: u64 = 2 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(20);
 const USER_AGENT: &str = "websave-link-checker/0.1";
+/// Some CDNs/routers classify requests without an HTML `Accept` header as
+/// API traffic and 404 perfectly healthy pages (crates.io does this).
+const ACCEPT: &str = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+/// Fallback identity for sites that reject unknown bots outright.
+const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 /// The minimal data needed to check one save without holding the vault lock.
 #[derive(Debug, Clone)]
@@ -26,6 +32,8 @@ pub struct CheckOutcome {
     pub http_status: Option<u16>,
     pub redirect_url: Option<String>,
     pub content_hash: Option<String>,
+    /// Cover image URL (og:image and friends) found in the page, absolute.
+    pub og_image: Option<String>,
 }
 
 /// Probe a URL and classify it.
@@ -46,10 +54,41 @@ pub fn check_url(url: &str, previous_hash: &str) -> CheckOutcome {
         .user_agent(USER_AGENT)
         .build();
 
-    match agent.get(url).call() {
+    let first = probe(&agent, url, previous_hash, None);
+    // A dead verdict from an HTTP status (not a transport failure) may just
+    // be bot filtering — confirm with a browser identity before believing it.
+    if first.status == LinkStatus::Dead && first.http_status.is_some() {
+        log::debug!("{url} looked dead (http {:?}), retrying as browser", first.http_status);
+        let second = probe(&agent, url, previous_hash, Some(BROWSER_UA));
+        if second.status != LinkStatus::Dead {
+            return second;
+        }
+    }
+    first
+}
+
+fn probe(
+    agent: &ureq::Agent,
+    url: &str,
+    previous_hash: &str,
+    user_agent: Option<&str>,
+) -> CheckOutcome {
+    let mut request = agent
+        .get(url)
+        .set("Accept", ACCEPT)
+        .set("Accept-Language", "en;q=0.9, *;q=0.5");
+    if let Some(ua) = user_agent {
+        request = request.set("User-Agent", ua);
+    }
+
+    match request.call() {
         Ok(resp) => {
             let code = resp.status();
             let final_url = resp.get_url().to_string();
+            let is_html = resp
+                .content_type()
+                .to_ascii_lowercase()
+                .contains("html");
             let redirected = !same_destination(url, &final_url);
             let mut body = Vec::new();
             let _ = resp
@@ -57,6 +96,11 @@ pub fn check_url(url: &str, previous_hash: &str) -> CheckOutcome {
                 .take(MAX_BODY_BYTES)
                 .read_to_end(&mut body);
             let hash = hex_sha256(&body);
+            let og_image = if is_html {
+                extract_og_image(&String::from_utf8_lossy(&body), &final_url)
+            } else {
+                None
+            };
             let status = if (300..400).contains(&code) || redirected {
                 LinkStatus::Redirected
             } else if !previous_hash.is_empty() && previous_hash != hash {
@@ -69,6 +113,7 @@ pub fn check_url(url: &str, previous_hash: &str) -> CheckOutcome {
                 http_status: Some(code),
                 redirect_url: Some(if redirected { final_url } else { String::new() }),
                 content_hash: Some(hash),
+                og_image,
             }
         }
         Err(ureq::Error::Status(code, resp)) => {
@@ -89,6 +134,7 @@ pub fn check_url(url: &str, previous_hash: &str) -> CheckOutcome {
                 http_status: Some(code),
                 redirect_url: Some(if redirected { final_url } else { String::new() }),
                 content_hash: None,
+                og_image: None,
             }
         }
         Err(_) => CheckOutcome {
@@ -96,8 +142,92 @@ pub fn check_url(url: &str, previous_hash: &str) -> CheckOutcome {
             http_status: None,
             redirect_url: None,
             content_hash: None,
+            og_image: None,
         },
     }
+}
+
+/// Pull the page's cover image URL out of its HTML head metadata:
+/// `og:image`, `og:image:url`, `twitter:image`, or `link rel="image_src"`.
+/// Relative URLs are resolved against the page's final URL.
+pub fn extract_og_image(html: &str, base_url: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let keys = ["og:image", "og:image:url", "twitter:image", "twitter:image:src"];
+    let mut pos = 0;
+    let mut found: Option<String> = None;
+
+    while let Some(i) = lower.get(pos..).and_then(|s| s.find("<meta")) {
+        let start = pos + i;
+        let end = lower.get(start..).and_then(|s| s.find('>')).map(|e| start + e);
+        let Some(end) = end else { break };
+        let tag = &html[start..end];
+        let key = crate::import::attr(tag, "property")
+            .or_else(|| crate::import::attr(tag, "name"))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if keys.contains(&key.as_str()) {
+            if let Some(content) = crate::import::attr(tag, "content") {
+                if !content.trim().is_empty() {
+                    found = Some(content.trim().to_string());
+                    break;
+                }
+            }
+        }
+        pos = end;
+    }
+
+    if found.is_none() {
+        // <link rel="image_src" href="...">
+        if let Some(i) = lower.find("rel=\"image_src\"").or_else(|| lower.find("rel='image_src'")) {
+            let start = lower[..i].rfind("<link").unwrap_or(i);
+            let end = lower.get(start..).and_then(|s| s.find('>')).map(|e| start + e);
+            if let Some(end) = end {
+                found = crate::import::attr(&html[start..end], "href");
+            }
+        }
+    }
+
+    let raw = found?;
+    let base = url::Url::parse(base_url).ok()?;
+    let absolute = base.join(&raw).ok()?;
+    if absolute.scheme() == "http" || absolute.scheme() == "https" {
+        Some(absolute.to_string())
+    } else {
+        None
+    }
+}
+
+const MAX_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
+
+/// Download a cover image; returns the bytes and a file extension derived
+/// from the content type. Non-images and oversized files are rejected.
+pub fn download_image(url: &str) -> Option<(Vec<u8>, &'static str)> {
+    let resp = ureq::AgentBuilder::new()
+        .timeout(TIMEOUT)
+        .redirects(8)
+        .user_agent(BROWSER_UA)
+        .build()
+        .get(url)
+        .set("Accept", "image/*")
+        .call()
+        .ok()?;
+    let ext = match resp.content_type().to_ascii_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        "image/avif" => "avif",
+        other => {
+            log::debug!("thumbnail: skipping {url}: content-type {other}");
+            return None;
+        }
+    };
+    let mut bytes = Vec::new();
+    resp.into_reader()
+        .take(MAX_IMAGE_BYTES)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (!bytes.is_empty()).then_some((bytes, ext))
 }
 
 /// Whether two URLs point at the same place for monitoring purposes:
@@ -127,7 +257,36 @@ fn hex_sha256(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::same_destination;
+    use super::{extract_og_image, same_destination};
+
+    #[test]
+    fn og_image_extraction_and_resolution() {
+        let html = r#"<html><head>
+            <meta charset="utf-8">
+            <meta name="description" content="not an image">
+            <meta property="og:image" content="/static/cover.png?v=2">
+        </head></html>"#;
+        assert_eq!(
+            extract_og_image(html, "https://example.com/post/1"),
+            Some("https://example.com/static/cover.png?v=2".into())
+        );
+
+        let twitter = r#"<META NAME="twitter:image" CONTENT="https://cdn.example.com/t.jpg">"#;
+        assert_eq!(
+            extract_og_image(twitter, "https://example.com"),
+            Some("https://cdn.example.com/t.jpg".into())
+        );
+
+        assert_eq!(extract_og_image("<html>no meta</html>", "https://e.com"), None);
+        assert_eq!(
+            extract_og_image(
+                r#"<meta property="og:image" content="data:image/png;base64,xx">"#,
+                "https://e.com"
+            ),
+            None,
+            "non-http schemes rejected"
+        );
+    }
 
     #[test]
     fn scheme_and_www_changes_are_same_destination() {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import * as api from "../api";
 
 export type Theme = "system" | "light" | "dark";
@@ -10,21 +11,52 @@ interface Props {
 }
 
 const THEMES: { value: Theme; label: string; hint: string }[] = [
-  { value: "system", label: "System", hint: "Follow macOS appearance" },
+  { value: "system", label: "System", hint: "Follow system appearance" },
   { value: "light", label: "Light", hint: "Always light" },
   { value: "dark", label: "Dark", hint: "Always dark" },
 ];
+
+const IS_MAC = navigator.userAgent.includes("Mac");
+
+export const MENUBAR_AUTOLAUNCH_KEY = "launchMenubarOnStart";
 
 export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
   const [vaultPath, setVaultPath] = useState("");
   const [logsPath, setLogsPath] = useState("");
   const [endpoint, setEndpoint] = useState("");
+  const [autostart, setAutostart] = useState(false);
+  const [menubarAutolaunch, setMenubarAutolaunch] = useState(
+    () => localStorage.getItem(MENUBAR_AUTOLAUNCH_KEY) === "true",
+  );
+
+  function toggleMenubarAutolaunch() {
+    const next = !menubarAutolaunch;
+    setMenubarAutolaunch(next);
+    localStorage.setItem(MENUBAR_AUTOLAUNCH_KEY, String(next));
+    if (next) {
+      api.launchMenubarApp().catch((e) => onError(String(e)));
+    }
+  }
 
   useEffect(() => {
     api.vaultPath().then(setVaultPath).catch((e) => onError(String(e)));
     api.logsPath().then(setLogsPath).catch((e) => onError(String(e)));
     api.captureEndpoint().then(setEndpoint).catch((e) => onError(String(e)));
+    isEnabled().then(setAutostart).catch((e) => onError(String(e)));
   }, [onError]);
+
+  async function toggleAutostart() {
+    try {
+      if (autostart) {
+        await disable();
+      } else {
+        await enable();
+      }
+      setAutostart(await isEnabled());
+    } catch (e) {
+      onError(String(e));
+    }
+  }
 
   return (
     <div className="settings">
@@ -46,6 +78,52 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
           ))}
         </div>
       </section>
+
+      <section className="settings-section">
+        <h2>General</h2>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={autostart}
+            onChange={toggleAutostart}
+          />
+          Launch WebSave at login
+        </label>
+        <p className="settings-text">
+          Recommended: closing the window keeps WebSave running in the
+          menubar/tray, so the extension can always capture and link
+          monitoring stays active. Quit from the tray icon.
+        </p>
+      </section>
+
+      {IS_MAC && (
+        <section className="settings-section">
+          <h2>Menubar app</h2>
+          <p className="settings-text">
+            A native companion app shows your starred and recent saves from
+            the menubar. It is a separate lightweight app (~12 MB) that reads
+            the same vault.
+          </p>
+          <div className="settings-row">
+            <button
+              className="btn"
+              onClick={() =>
+                api.launchMenubarApp().catch((e) => onError(String(e)))
+              }
+            >
+              Launch menubar app
+            </button>
+          </div>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={menubarAutolaunch}
+              onChange={toggleMenubarAutolaunch}
+            />
+            Start it together with WebSave
+          </label>
+        </section>
+      )}
 
       <section className="settings-section">
         <h2>Storage</h2>

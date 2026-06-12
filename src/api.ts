@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ImportPreview,
+  ImportReport,
   ListQuery,
   NewSave,
   Save,
@@ -44,3 +46,15 @@ export const openLogsDir = () => invoke<void>("open_logs_dir");
 export const openVaultDir = () => invoke<void>("open_vault_dir");
 
 export const captureEndpoint = () => invoke<string>("capture_endpoint");
+
+export const previewImport = (path: string) =>
+  invoke<ImportPreview>("preview_import", { path });
+
+export const runImport = (path: string) =>
+  invoke<ImportReport>("run_import", { path });
+
+export const launchMenubarApp = () => invoke<void>("launch_menubar_app");
+
+export const showMainWindow = () => invoke<void>("show_main_window");
+
+export const hideQuickWindow = () => invoke<void>("hide_quick_window");

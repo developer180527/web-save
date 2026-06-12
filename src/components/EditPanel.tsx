@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { Save } from "../types";
 import { parseTagsInput, relativeTime, STATUS_LABELS } from "../utils";
+import { XIcon } from "./Icons";
 
 interface Props {
   save: Save;
@@ -80,7 +81,7 @@ export default function EditPanel({
       <div className="edit-header">
         <h2>Details</h2>
         <button className="btn btn-subtle" onClick={onClose}>
-          ✕
+          <XIcon size={15} />
         </button>
       </div>
 

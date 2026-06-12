@@ -48,6 +48,9 @@ pub struct Save {
     pub description: String,
     pub notes: String,
     pub favicon_url: String,
+    /// Cached cover image, relative to the vault's assets directory
+    /// (e.g. `thumbs/42.jpg`). Empty when none has been fetched yet.
+    pub thumbnail: String,
     pub favorite: bool,
     pub status: LinkStatus,
     /// Final URL after redirects, when it differs from `url`.
