@@ -20,6 +20,7 @@ import ImportDialog from "./components/ImportDialog";
 import CommandPalette, {
   type PaletteAction,
 } from "./components/CommandPalette";
+import TitleBar from "./components/TitleBar";
 import {
   GridIcon,
   ImportIcon,
@@ -478,8 +479,10 @@ function App() {
   const gridColumns = `${sidebarWidth}px 5px 1fr${showPanel ? " 360px" : ""}`;
 
   return (
-    <div className="app" style={{ gridTemplateColumns: gridColumns }}>
-      <Sidebar
+    <div className="app-shell">
+      <TitleBar />
+      <div className="app" style={{ gridTemplateColumns: gridColumns }}>
+        <Sidebar
         view={view}
         onViewChange={(v) => {
           setView(v);
@@ -774,6 +777,7 @@ function App() {
           onError={setError}
         />
       )}
+      </div>
     </div>
   );
 }

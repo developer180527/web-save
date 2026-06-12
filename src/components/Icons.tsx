@@ -78,6 +78,18 @@ export const RefreshIcon = ({ size }: IconProps) => (
   </Svg>
 );
 
+export const MinimizeIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </Svg>
+);
+
+export const MaximizeIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <rect x="5" y="5" width="14" height="14" rx="1.5" />
+  </Svg>
+);
+
 export const BookmarkIcon = ({ size }: IconProps) => (
   <Svg size={size}>
     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />

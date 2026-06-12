@@ -95,10 +95,69 @@ textarea,
   height: 100vh;
 }
 
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
 /* Columns are set inline from React: sidebar | resizer | main [| panel] */
 .app {
   display: grid;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------- custom title bar ---------- */
+
+.titlebar {
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Leave room for the native macOS traffic lights overlaying our chrome. */
+.titlebar.mac {
+  padding-left: 84px;
+}
+
+.titlebar-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: -0.01em;
+}
+
+.titlebar-controls {
+  display: flex;
+  height: 100%;
+}
+
+.titlebar-btn {
+  width: 44px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.titlebar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.titlebar-close:hover {
+  background: #e81123;
+  color: #ffffff;
 }
 
 .sidebar-resizer {

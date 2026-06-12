@@ -62,6 +62,19 @@ pub fn run() {
             app.manage(vault.clone());
             app.manage(tray::QuickPanelGuard::new());
 
+            // Custom title bar: macOS keeps the native traffic lights
+            // overlaid on our chrome; Windows/Linux go frameless and the
+            // frontend renders its own window controls.
+            if let Some(main) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = main.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+                    let _ = main.set_title("");
+                }
+                #[cfg(not(target_os = "macos"))]
+                let _ = main.set_decorations(false);
+            }
+
             // On macOS the menubar belongs to the native SwiftUI app
             // (macos-menubar/), which links websave-core directly — so the
             // engine creates no tray icon and no popover webview there.
