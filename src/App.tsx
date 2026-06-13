@@ -133,9 +133,9 @@ function App() {
     window.addEventListener("mouseup", onUp);
   }
 
-  function currentQuery(): ListQuery {
+  function buildQuery(searchText: string): ListQuery {
     return {
-      query: search.trim() || null,
+      query: searchText.trim() || null,
       tag: activeTag,
       favoritesOnly: view === "favorites",
       unreadOnly: view === "inbox",
@@ -145,37 +145,53 @@ function App() {
           : null,
     };
   }
+  const currentQuery = () => buildQuery(search);
 
-  const refresh = useCallback(async () => {
-    const query: ListQuery = {
-      query: search.trim() || null,
-      tag: activeTag,
-      favoritesOnly: view === "favorites",
-      unreadOnly: view === "inbox",
-      status:
-        view !== "all" && view !== "favorites" && view !== "inbox"
-          ? view
-          : null,
-    };
+  // Debounce only the search box; discrete filter clicks must feel instant,
+  // so they bypass the debounce entirely (they change activeTag/view, not
+  // debouncedSearch).
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Hot path: re-list saves when the active filter changes — one IPC call,
+  // fired immediately (no artificial delay on navigation).
+  const refreshSaves = useCallback(async () => {
     try {
-      const [s, t, st] = await Promise.all([
-        api.listSaves(query),
-        api.listTags(),
-        api.vaultStats(),
-      ]);
-      setSaves(s);
+      setSaves(await api.listSaves(buildQuery(debouncedSearch)));
+    } catch (e) {
+      setError(String(e));
+    }
+    // buildQuery closes over activeTag/view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, activeTag, view]);
+  useEffect(() => {
+    refreshSaves();
+  }, [refreshSaves]);
+
+  // Sidebar metadata (tag list + counts) only changes when the vault is
+  // mutated — never on filtering — so it is fetched separately, not on every
+  // keystroke.
+  const refreshMeta = useCallback(async () => {
+    try {
+      const [t, st] = await Promise.all([api.listTags(), api.vaultStats()]);
       setTags(t);
       setStats(st);
     } catch (e) {
       setError(String(e));
     }
-  }, [search, activeTag, view]);
-
-  // Debounced refresh whenever search/filters change (and on mount).
+  }, []);
   useEffect(() => {
-    const timer = setTimeout(refresh, 120);
-    return () => clearTimeout(timer);
-  }, [refresh]);
+    refreshMeta();
+  }, [refreshMeta]);
+
+  // After any mutation: refresh both the list and the sidebar counts.
+  const refreshAll = useCallback(() => {
+    refreshSaves();
+    refreshMeta();
+  }, [refreshSaves, refreshMeta]);
 
   // Keep keyboard focus inside the list as it changes.
   useEffect(() => {
@@ -230,8 +246,8 @@ function App() {
   }, []);
 
   // Background monitor (and capture clients) signal through this event.
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
+  const refreshRef = useRef(refreshAll);
+  refreshRef.current = refreshAll;
   useEffect(() => {
     const unlisten = listen("saves-updated", () => refreshRef.current());
     return () => {
@@ -242,7 +258,7 @@ function App() {
   function applyChange(updated: Save) {
     setSaves((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
     setSelected((prev) => (prev?.id === updated.id ? updated : prev));
-    refresh();
+    refreshAll();
   }
 
   async function saveUrl(raw: string) {
@@ -257,7 +273,7 @@ function App() {
       setAddOpen(false);
       setSelected(save);
       setError(null);
-      await refresh();
+      await refreshAll();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -352,7 +368,7 @@ function App() {
       await api.deleteSave(save.id);
       setSaves((prev) => prev.filter((s) => s.id !== save.id));
       setSelected((prev) => (prev?.id === save.id ? null : prev));
-      refresh();
+      refreshAll();
     } catch (e) {
       setError(String(e));
     }
@@ -376,7 +392,7 @@ function App() {
   async function runBulk(op: () => Promise<void>) {
     try {
       await op();
-      await refresh();
+      await refreshAll();
     } catch (e) {
       setError(String(e));
     }
@@ -424,9 +440,12 @@ function App() {
   }
 
   // ---- keyboard layer ----
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+  // The handler closes over a lot of state, so it is rebuilt every render
+  // into a ref; the window listener is bound ONCE (binding a fresh listener
+  // every render was a source of churn).
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    {
       const target = e.target as HTMLElement;
       const typing =
         target.tagName === "INPUT" ||
@@ -495,10 +514,13 @@ function App() {
           }
           break;
       }
-    };
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandlerRef.current(e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   const paletteActions: PaletteAction[] = [
     { id: "add", label: "Add a URL…", run: () => setAddOpen(true) },
@@ -540,14 +562,21 @@ function App() {
         <Sidebar
         view={view}
         onViewChange={(v) => {
+          // A view and a tag are mutually exclusive selections — picking a
+          // view clears any active tag so the page actually switches.
           setView(v);
+          setActiveTag(null);
           setSelected(null);
           setScreen("library");
         }}
         tags={tags}
         activeTag={activeTag}
         onTagChange={(t) => {
+          // Picking a tag resets the view filter to the "all" baseline so the
+          // tag is the only active selection.
           setActiveTag(t);
+          setView("all");
+          setSelected(null);
           setScreen("library");
         }}
         stats={stats}
@@ -831,7 +860,7 @@ function App() {
         <ImportDialog
           onClose={() => {
             setImportOpen(false);
-            refresh();
+            refreshAll();
           }}
         />
       )}
@@ -852,7 +881,7 @@ function App() {
           onDeleted={(id) => {
             setSaves((prev) => prev.filter((s) => s.id !== id));
             setSelected(null);
-            refresh();
+            refreshAll();
           }}
           onOpen={handleOpen}
           onError={setError}

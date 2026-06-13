@@ -70,7 +70,9 @@ export default function Sidebar({
   const item = (v: View, label: string, count?: number) => (
     <button
       key={v}
-      className={`nav-item ${view === v ? "active" : ""}`}
+      // A view is highlighted only when it's the active selection — i.e. no
+      // tag is currently chosen (tags and views are mutually exclusive).
+      className={`nav-item ${view === v && !activeTag ? "active" : ""}`}
       onClick={() => onViewChange(v)}
     >
       <span className={`nav-icon nav-icon-${v}`}>{VIEW_ICONS[v]}</span>
