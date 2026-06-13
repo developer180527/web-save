@@ -53,6 +53,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_decorum::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -69,8 +70,13 @@ pub fn run() {
             if let Some(main) = app.get_webview_window("main") {
                 #[cfg(target_os = "macos")]
                 {
+                    use tauri_plugin_decorum::WebviewWindowExt;
                     let _ = main.set_title_bar_style(tauri::TitleBarStyle::Overlay);
                     let _ = main.set_title("");
+                    // Nudge the native traffic lights down and to the right so
+                    // they sit centered in our 38px bar, just left of the
+                    // "WebSave" title (decorum re-applies this on resize).
+                    let _ = main.set_traffic_lights_inset(16.0, 13.0);
                 }
                 #[cfg(not(target_os = "macos"))]
                 let _ = main.set_decorations(false);
