@@ -25,6 +25,13 @@ export const STATUS_LABELS: Record<LinkStatus, string> = {
   dead: "Dead",
 };
 
+/** First http(s) URL found in arbitrary text, or null. */
+export function firstWebUrl(text: string): string | null {
+  if (!text) return null;
+  const match = text.trim().match(/https?:\/\/[^\s<>"']+/i);
+  return match ? match[0] : null;
+}
+
 export function parseTagsInput(input: string): string[] {
   return input
     .split(",")

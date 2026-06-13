@@ -78,6 +78,19 @@ export const RefreshIcon = ({ size }: IconProps) => (
   </Svg>
 );
 
+export const ClipboardIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" />
+  </Svg>
+);
+
+export const ChevronUpIcon = ({ size }: IconProps) => (
+  <Svg size={size}>
+    <polyline points="18 15 12 9 6 15" />
+  </Svg>
+);
+
 export const MinimizeIcon = ({ size }: IconProps) => (
   <Svg size={size}>
     <line x1="5" y1="12" x2="19" y2="12" />

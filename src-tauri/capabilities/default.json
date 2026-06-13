@@ -9,6 +9,7 @@
     "log:default",
     "autostart:default",
     "dialog:default",
+    "clipboard-manager:allow-read-text",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close"

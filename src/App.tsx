@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { firstWebUrl, hostOf } from "./utils";
 import * as api from "./api";
 import type {
   ListQuery,
@@ -22,6 +24,8 @@ import CommandPalette, {
 } from "./components/CommandPalette";
 import TitleBar from "./components/TitleBar";
 import {
+  ChevronUpIcon,
+  ClipboardIcon,
   GridIcon,
   ImportIcon,
   ListIcon,
@@ -43,6 +47,9 @@ function App() {
   const [selected, setSelected] = useState<Save | null>(null);
   const [addUrl, setAddUrl] = useState("");
   const [adding, setAdding] = useState(false);
+  // A web URL sitting on the clipboard, surfaced as one-click "Paste & Add".
+  const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
+  const [handledClipboard, setHandledClipboard] = useState<string | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<"library" | "settings">("library");
@@ -180,6 +187,38 @@ function App() {
   }, []);
   useEffect(loadSavedSearches, [loadSavedSearches]);
 
+  // Watch the clipboard for a web URL (only while the window is focused, to
+  // avoid reading it in the background) and offer one-click "Paste & Add".
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      if (!document.hasFocus()) return;
+      try {
+        const text = await readText();
+        const url = firstWebUrl(text);
+        if (!cancelled) setClipboardUrl(url);
+      } catch {
+        // clipboard empty or non-text — ignore
+      }
+    }
+    check();
+    const onFocus = () => check();
+    window.addEventListener("focus", onFocus);
+    const timer = setInterval(check, 1500);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      clearInterval(timer);
+    };
+  }, []);
+
+  // A handled URL stays suppressed until the clipboard contents change.
+  useEffect(() => {
+    if (clipboardUrl && clipboardUrl !== handledClipboard) {
+      setHandledClipboard(null);
+    }
+  }, [clipboardUrl, handledClipboard]);
+
   // Bring the macOS menubar companion up alongside the engine, if enabled.
   useEffect(() => {
     if (
@@ -206,9 +245,8 @@ function App() {
     refresh();
   }
 
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    const url = addUrl.trim();
+  async function saveUrl(raw: string) {
+    const url = raw.trim();
     if (!url) return;
     setAdding(true);
     try {
@@ -225,6 +263,19 @@ function App() {
     } finally {
       setAdding(false);
     }
+  }
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    saveUrl(addUrl);
+  }
+
+  async function handlePasteAndAdd() {
+    if (!clipboardUrl) return;
+    // Don't re-suggest this URL until the clipboard changes again.
+    setHandledClipboard(clipboardUrl);
+    setClipboardUrl(null);
+    await saveUrl(clipboardUrl);
   }
 
   async function handleToggleFavorite(save: Save) {
@@ -477,6 +528,10 @@ function App() {
 
   const showPanel = screen === "library" && selected !== null;
   const gridColumns = `${sidebarWidth}px 5px 1fr${showPanel ? " 360px" : ""}`;
+  // Offer one-click paste only for a fresh, unhandled clipboard URL, and not
+  // while the manual input is open.
+  const pasteReady =
+    clipboardUrl !== null && clipboardUrl !== handledClipboard && !addOpen;
 
   return (
     <div className="app-shell">
@@ -589,13 +644,39 @@ function App() {
               <ImportIcon size={15} /> Import
             </button>
             <div className="add-wrap" onClick={(e) => e.stopPropagation()}>
-              <button
-                className="btn btn-primary"
-                title="Save a URL"
-                onClick={() => setAddOpen((v) => !v)}
-              >
-                <PlusIcon size={15} /> Add
-              </button>
+              {pasteReady ? (
+                <div className="split-btn">
+                  <button
+                    className="btn btn-primary split-main"
+                    title={`Save ${clipboardUrl}`}
+                    disabled={adding}
+                    onClick={handlePasteAndAdd}
+                  >
+                    <ClipboardIcon size={15} />
+                    <span className="split-main-text">
+                      Paste &amp; Add
+                      <span className="split-host">
+                        {hostOf(clipboardUrl!)}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    className="btn btn-primary split-toggle"
+                    title="Add a different URL"
+                    onClick={() => setAddOpen((v) => !v)}
+                  >
+                    <ChevronUpIcon size={15} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  title="Save a URL"
+                  onClick={() => setAddOpen((v) => !v)}
+                >
+                  <PlusIcon size={15} /> Add
+                </button>
+              )}
               {addOpen && (
                 <form className="add-popover" onSubmit={handleAdd}>
                   <input
