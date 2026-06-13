@@ -127,6 +127,15 @@ CREATE TABLE saved_searches (
     query_json TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+"#,
+    // v5: generic key-value metadata. A portable primitive the host can use
+    // for whatever it needs (e.g. tracking when a capture client last
+    // checked in) — core stays unaware of any specific key's meaning.
+    r#"
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+) WITHOUT ROWID;
 "#];
 
 const SAVE_COLS: &str = "s.id, s.url, s.title, s.description, s.notes, s.favicon_url, s.favorite, \
@@ -541,6 +550,32 @@ impl Vault {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(tags)
+    }
+
+    // ---- generic metadata key-value store ----
+    //
+    // Host-defined keys only; the core attaches no meaning to them. Used by
+    // the desktop app to remember, e.g., when the browser extension last
+    // delivered a capture.
+
+    pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let value = conn
+            .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(value)
+    }
+
+    pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![key, value],
+        )?;
+        Ok(())
     }
 
     pub fn stats(&self) -> Result<VaultStats> {

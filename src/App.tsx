@@ -5,6 +5,7 @@ import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { firstWebUrl, hostOf } from "./utils";
 import * as api from "./api";
 import type {
+  ExtensionStatus,
   ListQuery,
   Save,
   SavedSearch,
@@ -19,6 +20,7 @@ import SettingsPage, {
   type Theme,
 } from "./components/SettingsPage";
 import ImportDialog from "./components/ImportDialog";
+import ExtensionBanner from "./components/ExtensionBanner";
 import CommandPalette, {
   type PaletteAction,
 } from "./components/CommandPalette";
@@ -56,6 +58,10 @@ function App() {
   const [importOpen, setImportOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [vaultDir, setVaultDir] = useState("");
+  const [extStatus, setExtStatus] = useState<ExtensionStatus | null>(null);
+  const [extBannerDismissed, setExtBannerDismissed] = useState(
+    () => localStorage.getItem("extBannerDismissed") === "true",
+  );
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [saveSearchOpen, setSaveSearchOpen] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState("");
@@ -176,9 +182,14 @@ function App() {
   // keystroke.
   const refreshMeta = useCallback(async () => {
     try {
-      const [t, st] = await Promise.all([api.listTags(), api.vaultStats()]);
+      const [t, st, ext] = await Promise.all([
+        api.listTags(),
+        api.vaultStats(),
+        api.extensionStatus(),
+      ]);
       setTags(t);
       setStats(st);
+      setExtStatus(ext);
     } catch (e) {
       setError(String(e));
     }
@@ -731,6 +742,19 @@ function App() {
               {error} <span className="error-dismiss">(dismiss)</span>
             </div>
           )}
+
+          {extStatus &&
+            extStatus.lastSeen === null &&
+            !extBannerDismissed &&
+            view === "all" &&
+            !activeTag && (
+              <ExtensionBanner
+                onDismiss={() => {
+                  setExtBannerDismissed(true);
+                  localStorage.setItem("extBannerDismissed", "true");
+                }}
+              />
+            )}
 
           {activeTag && (
             <div className="filter-banner">

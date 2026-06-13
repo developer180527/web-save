@@ -19,6 +19,7 @@ use websave_core::{NewSave, Vault};
 
 pub const CAPTURE_ADDR: &str = "127.0.0.1:38917";
 const CLIENT_HEADER: &str = "x-websave-client";
+const EXT_VERSION_HEADER: &str = "x-websave-ext-version";
 // Generous cap: payloads may carry a base64 viewport screenshot.
 const MAX_BODY_BYTES: u64 = 12 * 1024 * 1024;
 const MAX_SCREENSHOT_BYTES: usize = 6 * 1024 * 1024;
@@ -74,14 +75,12 @@ fn handle(
             json(200, r#"{"ok":true}"#.into())
         }
         (Method::Post, "/save") => {
-            let has_client_header = request
-                .headers()
-                .iter()
-                .any(|h: &Header| h.field.equiv(CLIENT_HEADER));
-            if !has_client_header {
+            let client = header_value(request, CLIENT_HEADER);
+            if client.is_none() {
                 log::warn!("capture server: rejected /save without {CLIENT_HEADER} header");
                 return json(403, r#"{"error":"missing client header"}"#.into());
             }
+            let ext_version = header_value(request, EXT_VERSION_HEADER);
 
             let mut body = String::new();
             if request
@@ -110,6 +109,19 @@ fn handle(
                             }
                         }
                     }
+                    // Remember that a capture client checked in, so the app
+                    // can show "extension connected" and drop onboarding.
+                    // Best-effort: a metadata failure must never fail a save.
+                    if client.as_deref() == Some("extension") {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let _ = vault.set_meta("ext.last_seen", &now.to_string());
+                        if let Some(v) = &ext_version {
+                            let _ = vault.set_meta("ext.version", v);
+                        }
+                    }
                     let _ = app.emit("saves-updated", ());
                     crate::wake_monitor(app);
                     match serde_json::to_string(&save) {
@@ -125,6 +137,16 @@ fn handle(
         }
         _ => json(404, r#"{"error":"not found"}"#.into()),
     }
+}
+
+/// Case-insensitive lookup of a request header value. (`Header::equiv`
+/// requires a `&'static str`, so we compare field names directly.)
+fn header_value(request: &tiny_http::Request, name: &str) -> Option<String> {
+    request
+        .headers()
+        .iter()
+        .find(|h: &&Header| h.field.as_str().as_str().eq_ignore_ascii_case(name))
+        .map(|h| h.value.as_str().to_string())
 }
 
 /// `data:image/jpeg;base64,...` → (bytes, extension), with mime and size

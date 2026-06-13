@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { relativeTime } from "../utils";
 import * as api from "../api";
 
 export type Theme = "system" | "light" | "dark";
@@ -25,6 +26,9 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
   const [logsPath, setLogsPath] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [autostart, setAutostart] = useState(false);
+  const [ext, setExt] = useState<import("../types").ExtensionStatus | null>(
+    null,
+  );
   const [menubarAutolaunch, setMenubarAutolaunch] = useState(
     () => localStorage.getItem(MENUBAR_AUTOLAUNCH_KEY) === "true",
   );
@@ -43,6 +47,7 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
     api.logsPath().then(setLogsPath).catch((e) => onError(String(e)));
     api.captureEndpoint().then(setEndpoint).catch((e) => onError(String(e)));
     isEnabled().then(setAutostart).catch((e) => onError(String(e)));
+    api.extensionStatus().then(setExt).catch(() => {});
   }, [onError]);
 
   async function toggleAutostart() {
@@ -144,12 +149,31 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
 
       <section className="settings-section">
         <h2>Browser extension</h2>
+        <div className="ext-status-row">
+          <span
+            className={`ext-status-dot ${
+              ext?.lastSeen != null ? "connected" : ""
+            }`}
+          />
+          {ext?.lastSeen != null ? (
+            <span>
+              Extension connected
+              {ext.version ? ` (v${ext.version})` : ""} · last capture{" "}
+              {relativeTime(ext.lastSeen)}
+            </span>
+          ) : (
+            <span>
+              Waiting for the browser extension — it'll connect on its first
+              capture.
+            </span>
+          )}
+        </div>
         <p className="settings-text">
-          The Chrome extension captures pages into this app while it is
-          running (saves queue up in the browser otherwise). Install it from
-          the project's <code>extension/</code> folder via{" "}
+          The extension captures pages into this app while it is running
+          (saves queue in the browser otherwise). Install it from the
+          project's <code>extension/</code> folder via{" "}
           <code>chrome://extensions</code> → Developer mode → Load unpacked.
-          It talks to the app at:
+          It talks to the app locally at:
         </p>
         <div className="settings-row">
           <code className="settings-path selectable">{endpoint}</code>

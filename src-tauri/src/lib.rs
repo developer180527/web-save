@@ -163,6 +163,7 @@ pub fn run() {
             commands::list_tags,
             commands::get_archive,
             commands::vault_stats,
+            commands::extension_status,
             commands::vault_path,
             commands::check_save_now,
             commands::recheck_all,

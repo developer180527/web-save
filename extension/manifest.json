@@ -16,7 +16,8 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Save to WebSave"
+    "default_title": "Save to WebSave",
+    "default_popup": "popup.html"
   },
   "icons": {
     "32": "icons/32.png",

@@ -73,6 +73,12 @@ export interface ImportPreview extends ImportReport {
   format: string;
 }
 
+export interface ExtensionStatus {
+  /** Unix seconds of the last extension capture, or null if never. */
+  lastSeen: number | null;
+  version: string | null;
+}
+
 export interface VaultStats {
   total: number;
   favorites: number;

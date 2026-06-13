@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ExtensionStatus,
   ImportPreview,
   ImportReport,
   ListQuery,
@@ -62,6 +63,9 @@ export const getArchive = (id: number) =>
   invoke<string | null>("get_archive", { id });
 
 export const vaultStats = () => invoke<VaultStats>("vault_stats");
+
+export const extensionStatus = () =>
+  invoke<ExtensionStatus>("extension_status");
 
 export const vaultPath = () => invoke<string>("vault_path");
 

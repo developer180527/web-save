@@ -1664,3 +1664,66 @@ input:focus:not(:focus-visible) {
   border-bottom-left-radius: 0;
   border-left: 1px solid color-mix(in srgb, #000 22%, var(--accent));
 }
+
+/* ---------- extension onboarding + status ---------- */
+
+.ext-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 10px;
+}
+
+.ext-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.ext-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ext-banner-text strong {
+  font-size: 13px;
+}
+
+.ext-banner-text span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.ext-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.ext-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--gray);
+}
+
+.ext-status-dot.connected {
+  background: var(--green);
+}

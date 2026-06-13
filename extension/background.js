@@ -113,14 +113,16 @@ function scrapeMeta() {
   };
 }
 
+// Returns "saved" | "queued" | "invalid" so the popup can report the result.
 async function capture(payload) {
   if (!/^https?:\/\//i.test(payload.url ?? "")) {
     await flashBadge("✗", "#d4373e");
-    return;
+    return "invalid";
   }
   try {
     await post(payload);
     await flashBadge("✓", "#2e9e5b");
+    return "saved";
   } catch {
     await enqueue(payload);
     await flashBadge("○", "#c98a1b");
@@ -130,6 +132,7 @@ async function capture(payload) {
       title: "WebSave is not running",
       message: "Saved to the queue — it will sync once the app is open.",
     });
+    return "queued";
   }
 }
 
@@ -139,6 +142,8 @@ async function post(payload) {
     headers: {
       "Content-Type": "application/json",
       "x-websave-client": "extension",
+      // Lets the app record which extension version is connected.
+      "x-websave-ext-version": chrome.runtime.getManifest().version,
     },
     body: JSON.stringify(payload),
   });
@@ -146,6 +151,19 @@ async function post(payload) {
     throw new Error(`HTTP ${resp.status}`);
   }
 }
+
+// The popup delegates the actual capture here (the background has the
+// scraping + screenshot logic and the host permissions).
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "capture-active-tab") {
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(async ([tab]) => {
+        sendResponse({ status: await capture(await pagePayload(tab)) });
+      });
+    return true; // async sendResponse
+  }
+});
 
 async function enqueue(payload) {
   const { [QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(QUEUE_KEY);

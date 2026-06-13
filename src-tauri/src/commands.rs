@@ -176,6 +176,28 @@ pub fn vault_stats(vault: VaultState) -> Result<VaultStats, String> {
     vault.stats().map_err(err)
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionStatus {
+    /// Unix seconds of the last capture received from the browser extension,
+    /// or null if it has never checked in.
+    last_seen: Option<i64>,
+    version: Option<String>,
+}
+
+/// Whether the browser extension has ever delivered a capture (the only
+/// signal the app has about the extension — it cannot inspect the browser).
+#[tauri::command]
+pub fn extension_status(vault: VaultState) -> Result<ExtensionStatus, String> {
+    Ok(ExtensionStatus {
+        last_seen: vault
+            .get_meta("ext.last_seen")
+            .map_err(err)?
+            .and_then(|s| s.parse().ok()),
+        version: vault.get_meta("ext.version").map_err(err)?,
+    })
+}
+
 #[tauri::command]
 pub fn vault_path(vault: VaultState) -> String {
     vault.root().display().to_string()

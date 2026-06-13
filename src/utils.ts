@@ -1,5 +1,12 @@
 import type { LinkStatus } from "./types";
 
+// Where the app points users to get the other half of the duo. Update these
+// to the Chrome Web Store / Releases URLs once published.
+export const EXTENSION_INSTALL_URL =
+  "https://github.com/developer180527/web-save#browser-extension";
+export const APP_DOWNLOAD_URL =
+  "https://github.com/developer180527/web-save/releases";
+
 export function hostOf(url: string): string {
   try {
     return new URL(url).host.replace(/^www\./, "");

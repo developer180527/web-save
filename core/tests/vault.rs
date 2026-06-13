@@ -403,3 +403,22 @@ fn set_url_accepts_redirects_and_guards_conflicts() {
         other => panic!("expected Conflict, got {other:?}"),
     }
 }
+
+#[test]
+fn meta_key_value_roundtrip() {
+    let (_dir, vault) = vault();
+    assert_eq!(vault.get_meta("missing").unwrap(), None);
+
+    vault.set_meta("ext.last_seen", "1700000000").unwrap();
+    assert_eq!(
+        vault.get_meta("ext.last_seen").unwrap().as_deref(),
+        Some("1700000000")
+    );
+
+    // Upsert overwrites.
+    vault.set_meta("ext.last_seen", "1800000000").unwrap();
+    assert_eq!(
+        vault.get_meta("ext.last_seen").unwrap().as_deref(),
+        Some("1800000000")
+    );
+}
