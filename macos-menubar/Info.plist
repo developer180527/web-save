@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.venugopal.web-save.menubar</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>1.1.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>1.1.0</string>
     <key>CFBundleExecutable</key>
     <string>WebSave Menubar</string>
     <key>CFBundlePackageType</key>

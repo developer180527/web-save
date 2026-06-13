@@ -29,6 +29,7 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
   const [ext, setExt] = useState<import("../types").ExtensionStatus | null>(
     null,
   );
+  const [version, setVersion] = useState("");
   const [menubarAutolaunch, setMenubarAutolaunch] = useState(
     () => localStorage.getItem(MENUBAR_AUTOLAUNCH_KEY) === "true",
   );
@@ -48,6 +49,7 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
     api.captureEndpoint().then(setEndpoint).catch((e) => onError(String(e)));
     isEnabled().then(setAutostart).catch((e) => onError(String(e)));
     api.extensionStatus().then(setExt).catch(() => {});
+    api.appVersion().then(setVersion).catch(() => {});
   }, [onError]);
 
   async function toggleAutostart() {
@@ -65,7 +67,10 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
 
   return (
     <div className="settings">
-      <h1>Settings</h1>
+      <div className="settings-header">
+        <h1>Settings</h1>
+        {version && <span className="settings-version">WebSave v{version}</span>}
+      </div>
 
       <section className="settings-section">
         <h2>Appearance</h2>

@@ -203,6 +203,11 @@ pub fn vault_path(vault: VaultState) -> String {
     vault.root().display().to_string()
 }
 
+#[tauri::command]
+pub fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 /// Check one link immediately. Network-bound, so it runs on a blocking thread.
 #[tauri::command]
 pub async fn check_save_now(

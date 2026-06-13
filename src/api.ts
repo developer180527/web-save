@@ -69,6 +69,8 @@ export const extensionStatus = () =>
 
 export const vaultPath = () => invoke<string>("vault_path");
 
+export const appVersion = () => invoke<string>("app_version");
+
 export const checkSaveNow = (id: number) =>
   invoke<Save>("check_save_now", { id });
 

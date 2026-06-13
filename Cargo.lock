@@ -5811,7 +5811,7 @@ dependencies = [
 
 [[package]]
 name = "web-save"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "log",
@@ -5915,7 +5915,7 @@ dependencies = [
 
 [[package]]
 name = "websave-core"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "csv",
  "log",
@@ -5931,7 +5931,7 @@ dependencies = [
 
 [[package]]
 name = "websave-ffi"
-version = "0.1.0"
+version = "1.1.0"
 dependencies = [
  "thiserror 1.0.69",
  "uniffi",

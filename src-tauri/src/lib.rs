@@ -165,6 +165,7 @@ pub fn run() {
             commands::vault_stats,
             commands::extension_status,
             commands::vault_path,
+            commands::app_version,
             commands::check_save_now,
             commands::recheck_all,
             commands::logs_path,

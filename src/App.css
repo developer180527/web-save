@@ -1727,3 +1727,18 @@ input:focus:not(:focus-visible) {
 .ext-status-dot.connected {
   background: var(--green);
 }
+
+/* ---------- settings header with version ---------- */
+
+.settings-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-version {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
