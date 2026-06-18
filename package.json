@@ -8,7 +8,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "menubar": "bash macos-menubar/build.sh && open \"macos-menubar/dist/WebSave Menubar.app\""
+    "menubar": "bash macos-menubar/build.sh && open \"macos-menubar/dist/WebSave Menubar.app\"",
+    "build:mac": "tauri build && bash macos-menubar/embed.sh target/release/bundle/macos/web-save.app",
+    "ext:build": "node extension/build.mjs",
+    "ext:firefox": "node extension/build.mjs && npx web-ext run -s extension/dist/firefox"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

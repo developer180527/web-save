@@ -3,6 +3,9 @@
 // it isn't running. The app itself can never see the extension until a
 // capture arrives — this popup is how the extension sees the app.
 
+// Cross-browser: prefer the promise-based `browser` namespace (Firefox/Safari).
+globalThis.chrome = globalThis.browser ?? globalThis.chrome;
+
 const ENDPOINT = "http://127.0.0.1:38917";
 const APP_DOWNLOAD_URL =
   "https://github.com/developer180527/web-save/releases";

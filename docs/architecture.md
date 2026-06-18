@@ -290,9 +290,22 @@ app.
 
 ## 7. The browser extension (`extension`)
 
-A Chrome MV3 extension whose entire job is to deliver `{url, title,
+A Manifest V3 extension whose entire job is to deliver `{url, title,
 description, faviconUrl, tags}` to the engine reliably. It has **no read access**
 to the vault — it is a write-only capture pipe, by design.
+
+**Cross-browser by construction.** Because the extension talks to the engine
+over **localhost HTTP** rather than browser-specific native messaging, the same
+code runs on every browser. The source lives once in `extension/`; a tiny build
+script (`extension/build.mjs`, run via `npm run ext:build`) emits per-browser
+packages under `extension/dist/`: Chrome/Edge/Brave use the MV3 service-worker
+manifest as-is; Firefox gets an event-page `background.scripts` manifest plus a
+`gecko` id and a `data_collection_permissions: ["none"]` declaration (it
+collects no data). A one-line shim aliases `chrome.*` to the promise-based
+`browser.*` namespace on Firefox/Safari, so the `await chrome.*` calls work
+unchanged. The Firefox package passes `web-ext lint` with zero findings. Safari
+would additionally need a native-app wrapper (`safari-web-extension-converter`)
+and a local-network permission for the localhost call — tracked as future work.
 
 - **Capture paths:** right-click context menus (page / link / selection) capture
   instantly; the toolbar button opens a **popup** that pings `/ping`, shows
@@ -334,8 +347,20 @@ the portability promise:
 
 It is AppKit rather than SwiftUI specifically to keep the always-running utility
 lightweight (~12 MB resident vs. ~140 MB for the SwiftUI equivalent). It is a
-*fancy utility on top of the engine*, never a replacement for it, and it is
-excluded from desktop release builds.
+*fancy utility on top of the engine*, never a replacement for it.
+
+**Lifecycle — embedded as a login-item helper.** The menubar app is shipped
+*inside* the engine bundle at
+`web-save.app/Contents/Library/LoginItems/WebSave Menubar.app`. Because it lives
+under `Contents/`, the two share a single lifecycle: it installs as one download
+and **deleting (trashing) the engine app removes the menubar with it**. The
+engine launches this embedded copy first (resolved relative to its own
+executable; `launch_menubar_app` falls back to a loose install, the in-repo dev
+build, or LaunchServices). `macos-menubar/embed.sh <engine.app>` builds the
+helper and injects it (re-signing inside-out); `npm run build:mac` does a full
+packaged build (`tauri build` + embed). The CI release workflow builds the
+engine only — embedding is a macOS-packaging step layered on top, so the helper
+is never bundled into Windows/Linux artifacts.
 
 ---
 

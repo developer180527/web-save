@@ -21,6 +21,10 @@ dist-ssr
 macos-menubar/dist
 macos-menubar/Generated
 
+# Per-browser extension packages (built via `npm run ext:build`)
+extension/dist
+web-ext-artifacts
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,0 +1,4 @@
+module websave_ffiFFI {
+    header "websave_ffiFFI.h"
+    export *
+}

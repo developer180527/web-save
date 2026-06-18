@@ -329,10 +329,11 @@ pub async fn run_import(
 
 /// Launch the native menubar companion app (macOS only).
 ///
-/// Resolution order: LaunchServices by bundle id (covers an installed copy
-/// and activates an already-running instance instead of duplicating), then
-/// known locations — /Applications, next to the engine binary, and the
-/// in-repo dev build.
+/// The menubar app ships embedded inside the engine's own bundle
+/// (`Contents/Library/LoginItems/`) so the two share a lifecycle — deleting
+/// the engine app removes the menubar with it. That embedded copy is
+/// preferred; the other locations cover loose installs and the in-repo dev
+/// build, with LaunchServices as a last resort.
 #[tauri::command]
 pub fn launch_menubar_app() -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -340,22 +341,18 @@ pub fn launch_menubar_app() -> Result<(), String> {
         const BUNDLE_ID: &str = "com.venugopal.web-save.menubar";
         const APP_NAME: &str = "WebSave Menubar.app";
 
-        let by_id = std::process::Command::new("open")
-            .args(["-b", BUNDLE_ID])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if by_id {
-            return Ok(());
-        }
-
-        let mut candidates = vec![std::path::PathBuf::from("/Applications").join(APP_NAME)];
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
         if let Ok(exe) = std::env::current_exe() {
-            // Alongside the installed engine bundle.
+            // Embedded helper inside our own bundle:
+            // <engine>.app/Contents/MacOS/web-save → ../Library/LoginItems/<helper>
+            if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
+                candidates.push(contents.join("Library/LoginItems").join(APP_NAME));
+            }
+            // Alongside the engine binary (loose install).
             if let Some(dir) = exe.parent() {
                 candidates.push(dir.join(APP_NAME));
             }
-            // Dev build: target/debug/web-save → repo/macos-menubar/dist/.
+            // In-repo dev build (running via `tauri dev`).
             for ancestor in exe.ancestors().skip(1) {
                 let dev = ancestor.join("macos-menubar/dist").join(APP_NAME);
                 if dev.exists() {
@@ -364,6 +361,7 @@ pub fn launch_menubar_app() -> Result<(), String> {
                 }
             }
         }
+        candidates.push(std::path::PathBuf::from("/Applications").join(APP_NAME));
 
         for candidate in candidates {
             if candidate.exists() {
@@ -377,6 +375,15 @@ pub fn launch_menubar_app() -> Result<(), String> {
                     return Ok(());
                 }
             }
+        }
+        // Last resort: LaunchServices may know an already-registered copy.
+        if std::process::Command::new("open")
+            .args(["-b", BUNDLE_ID])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return Ok(());
         }
         Err("Menubar app not found — build it with `npm run menubar`".into())
     }

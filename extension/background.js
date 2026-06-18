@@ -4,6 +4,11 @@
 // to the desktop app's localhost endpoint. If the app isn't running, saves
 // are queued in chrome.storage.local and flushed by an alarm.
 
+// Cross-browser: Firefox/Safari expose a promise-based `browser` namespace.
+// Alias it onto `chrome` so the `await chrome.*` calls below work everywhere
+// (no-op on Chrome/Edge, where only `chrome` exists and is already promised).
+globalThis.chrome = globalThis.browser ?? globalThis.chrome;
+
 const ENDPOINT = "http://127.0.0.1:38917";
 const QUEUE_KEY = "pendingSaves";
 const QUEUE_LIMIT = 200;
