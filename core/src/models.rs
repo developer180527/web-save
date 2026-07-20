@@ -67,6 +67,9 @@ pub struct Save {
     /// When a readable-text archive snapshot was last stored, if ever.
     /// The text itself is fetched separately — it can be large.
     pub archived_at: Option<i64>,
+    /// When this link was first found dead (cleared if it recovers). Drives
+    /// the Trash grace period.
+    pub dead_since: Option<i64>,
 }
 
 /// Input for capturing a page (from the extension, UI, or any other client).

@@ -39,6 +39,19 @@ export function firstWebUrl(text: string): string | null {
   return match ? match[0] : null;
 }
 
+/** How long a dead link is kept before permanent deletion. */
+export const TRASH_GRACE_DAYS = 30;
+
+/**
+ * Days left before a dead link is permanently deleted. Returns null when the
+ * link isn't dead; 0 means it's due on the next sweep.
+ */
+export function daysUntilPurge(deadSince: number | null): number | null {
+  if (deadSince == null) return null;
+  const elapsedDays = (Date.now() / 1000 - deadSince) / 86400;
+  return Math.max(0, Math.ceil(TRASH_GRACE_DAYS - elapsedDays));
+}
+
 export function parseTagsInput(input: string): string[] {
   return input
     .split(",")

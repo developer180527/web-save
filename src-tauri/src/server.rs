@@ -63,6 +63,46 @@ fn handle(
             200,
             format!(r#"{{"app":"websave","version":"{}"}}"#, env!("CARGO_PKG_VERSION")),
         ),
+        // Recent saves for the extension popup's search. Read access is
+        // gated by the same custom header as /save, so ordinary web pages
+        // (which would need a CORS preflight we never answer) can't read the
+        // vault — only the extension, which Chrome exempts via
+        // host_permissions.
+        (Method::Get, url) if url.starts_with("/recent") => {
+            if header_value(request, CLIENT_HEADER).is_none() {
+                log::warn!("capture server: rejected /recent without {CLIENT_HEADER} header");
+                return json(403, r#"{"error":"missing client header"}"#.into());
+            }
+            let limit = query_param(url, "limit")
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(200)
+                .clamp(1, 500);
+            match vault.list_saves(&websave_core::ListQuery {
+                limit: Some(limit),
+                ..Default::default()
+            }) {
+                Ok(saves) => {
+                    // Only what the popup renders — keep the payload small.
+                    let slim: Vec<_> = saves
+                        .iter()
+                        .map(|s| {
+                            serde_json::json!({
+                                "id": s.id,
+                                "url": s.url,
+                                "title": s.title,
+                                "faviconUrl": s.favicon_url,
+                                "status": s.status.as_str(),
+                            })
+                        })
+                        .collect();
+                    match serde_json::to_string(&slim) {
+                        Ok(body) => json(200, body),
+                        Err(e) => json(500, format!(r#"{{"error":"{e}"}}"#)),
+                    }
+                }
+                Err(e) => json(500, format!(r#"{{"error":"{e}"}}"#)),
+            }
+        }
         // Used by the native menubar app: raise the main window.
         (Method::Get, "/show") => {
             crate::tray::show_main(app);
@@ -137,6 +177,15 @@ fn handle(
         }
         _ => json(404, r#"{"error":"not found"}"#.into()),
     }
+}
+
+/// Read a query-string parameter out of a request path.
+fn query_param(url: &str, name: &str) -> Option<String> {
+    let (_, query) = url.split_once('?')?;
+    query.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == name).then(|| v.to_string())
+    })
 }
 
 /// Case-insensitive lookup of a request header value. (`Header::equiv`

@@ -21,9 +21,10 @@ final class LabelCell: NSView {
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            // 6pt matches SaveCell's inset so headers align with row icons.
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -5),
         ])
     }
 
@@ -71,8 +72,8 @@ final class SaveCell: NSView {
 
         let stack = NSStackView(views: [iconView, textStack, starButton])
         stack.orientation = .horizontal
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+        stack.spacing = 9
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(stack)
@@ -81,8 +82,8 @@ final class SaveCell: NSView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 24),
-            iconView.heightAnchor.constraint(equalToConstant: 24),
+            iconView.widthAnchor.constraint(equalToConstant: 26),
+            iconView.heightAnchor.constraint(equalToConstant: 26),
             starButton.widthAnchor.constraint(equalToConstant: 22),
         ])
     }

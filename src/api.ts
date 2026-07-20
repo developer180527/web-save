@@ -71,6 +71,22 @@ export const vaultPath = () => invoke<string>("vault_path");
 
 export const appVersion = () => invoke<string>("app_version");
 
+export const getPref = (key: string) =>
+  invoke<string | null>("get_pref", { key });
+
+export const setPref = (key: string, value: string) =>
+  invoke<void>("set_pref", { key, value });
+
+export const purgeTrash = () => invoke<number>("purge_trash");
+
+export const emptyTrash = () => invoke<number>("empty_trash");
+
+export const exportData = (format: "json" | "html") =>
+  invoke<string>("export_data", { format });
+
+export const previewSave = (url: string, title: string) =>
+  invoke<void>("preview_save", { url, title });
+
 export const checkSaveNow = (id: number) =>
   invoke<Save>("check_save_now", { id });
 

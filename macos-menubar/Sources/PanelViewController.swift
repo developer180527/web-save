@@ -41,16 +41,20 @@ final class PanelViewController: NSViewController,
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
 
+        // Quiet, borderless footer controls (matching the desktop app's
+        // sidebar footer) rather than bezelled buttons.
         let openButton = NSButton(
             title: "Open WebSave", target: self, action: #selector(openMainApp)
         )
-        openButton.bezelStyle = .accessoryBarAction
+        openButton.isBordered = false
+        openButton.font = .systemFont(ofSize: 12, weight: .medium)
 
         let quitButton = NSButton(
             image: NSImage(systemSymbolName: "power", accessibilityDescription: "Quit")!,
             target: NSApp, action: #selector(NSApplication.terminate(_:))
         )
-        quitButton.bezelStyle = .accessoryBarAction
+        quitButton.isBordered = false
+        quitButton.contentTintColor = .secondaryLabelColor
         quitButton.toolTip = "Quit WebSave Menubar"
 
         let footerSpacer = NSView()
@@ -67,8 +71,10 @@ final class PanelViewController: NSViewController,
             views: [searchField, topSeparator, scroll, bottomSeparator, footer]
         )
         stack.orientation = .vertical
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 10, right: 12)
+        stack.spacing = 7
+        // Rows carry a 6pt inner inset, so content lines up ~16pt from the
+        // popover edge — consistent for headers, icons and the footer.
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 8, right: 10)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(stack)
@@ -148,9 +154,9 @@ final class PanelViewController: NSViewController,
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         switch rows[row] {
-        case .header: return 22
-        case .save: return 40
-        case .message: return 28
+        case .header: return 26
+        case .save: return 44
+        case .message: return 30
         }
     }
 

@@ -3,6 +3,7 @@ import { STATUS_LABELS } from "../utils";
 import {
   BookmarkIcon,
   CheckCircleIcon,
+  CheckIcon,
   GearIcon,
   HashIcon,
   HelpCircleIcon,
@@ -11,7 +12,7 @@ import {
   RefreshIcon,
   SearchIcon,
   StarIcon,
-  XCircleIcon,
+  TrashIcon,
   XIcon,
 } from "./Icons";
 
@@ -29,15 +30,17 @@ interface Props {
   onDeleteSavedSearch: (id: number) => void;
   onRecheckAll: () => void;
   rechecking: boolean;
+  recheckProgress: { done: number; total: number; finished: boolean } | null;
   onOpenSettings: () => void;
   settingsOpen: boolean;
 }
 
+// "dead" is intentionally absent — dead links live in Trash, which has its
+// own top-level entry and a 30-day grace policy.
 const STATUS_VIEWS: LinkStatus[] = [
   "active",
   "changed",
   "redirected",
-  "dead",
   "unchecked",
 ];
 
@@ -53,6 +56,7 @@ export default function Sidebar({
   onDeleteSavedSearch,
   onRecheckAll,
   rechecking,
+  recheckProgress,
   onOpenSettings,
   settingsOpen,
 }: Props) {
@@ -63,7 +67,7 @@ export default function Sidebar({
     active: <CheckCircleIcon size={15} />,
     changed: <RefreshIcon size={15} />,
     redirected: <RedirectIcon size={15} />,
-    dead: <XCircleIcon size={15} />,
+    dead: <TrashIcon size={15} />,
     unchecked: <HelpCircleIcon size={15} />,
   };
 
@@ -91,6 +95,7 @@ export default function Sidebar({
         {item("all", "All saves", stats?.total)}
         {item("inbox", "Inbox", stats?.unread)}
         {item("favorites", "Favorites", stats?.favorites)}
+        {item("dead", "Trash", stats?.dead)}
       </nav>
 
       {savedSearches.length > 0 && (
@@ -147,11 +152,31 @@ export default function Sidebar({
 
       <div className="sidebar-footer">
         <button
-          className="btn btn-subtle"
+          className="btn recheck-btn"
           onClick={onRecheckAll}
           disabled={rechecking}
+          title="Check every saved link for redirects and rot"
         >
-          {rechecking ? "Checking links…" : "Re-check all links"}
+          {rechecking ? (
+            <>
+              <span className="spinner" />
+              {recheckProgress && recheckProgress.total > 0
+                ? `Checking ${recheckProgress.done}/${recheckProgress.total}`
+                : "Checking…"}
+            </>
+          ) : recheckProgress?.finished ? (
+            <>
+              <CheckIcon size={13} />
+              {recheckProgress.total > 0
+                ? `Checked ${recheckProgress.total}`
+                : "Up to date"}
+            </>
+          ) : (
+            <>
+              <RefreshIcon size={13} />
+              Re-check links
+            </>
+          )}
         </button>
         <button
           className={`icon-btn ${settingsOpen ? "active" : ""}`}

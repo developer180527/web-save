@@ -136,11 +136,18 @@ CREATE TABLE meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 ) WITHOUT ROWID;
+"#,
+    // v6: when a link first went dead. Dead saves are quarantined (Trash)
+    // but keep being health-checked; recovery clears the stamp, and the host
+    // can purge anything still dead after its grace period.
+    r#"
+ALTER TABLE saves ADD COLUMN dead_since INTEGER;
+UPDATE saves SET dead_since = last_checked_at WHERE status = 'dead';
 "#];
 
 const SAVE_COLS: &str = "s.id, s.url, s.title, s.description, s.notes, s.favicon_url, s.favorite, \
      s.status, s.redirect_url, s.http_status, s.created_at, s.updated_at, s.last_checked_at, \
-     s.thumbnail, s.archived_at, s.is_read";
+     s.thumbnail, s.archived_at, s.is_read, s.dead_since";
 
 /// Subdirectory of the assets dir holding cached cover images.
 pub const THUMBS_DIR: &str = "thumbs";
@@ -552,6 +559,43 @@ impl Vault {
         Ok(tags)
     }
 
+    /// Permanently delete saves that have been continuously dead for longer
+    /// than `grace_secs`. Recovered links clear `dead_since`, so only links
+    /// that stayed dead for the whole window are removed. Returns the count.
+    pub fn purge_expired_dead(&self, grace_secs: i64) -> Result<u32> {
+        let cutoff = now() - grace_secs;
+        let conn = self.conn.lock().unwrap();
+        let removed = conn.execute(
+            "DELETE FROM saves
+             WHERE status = 'dead' AND dead_since IS NOT NULL AND dead_since <= ?1",
+            params![cutoff],
+        )?;
+        if removed > 0 {
+            conn.execute(
+                "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM save_tags)",
+                [],
+            )?;
+            log::info!("trash: purged {removed} link(s) dead longer than {grace_secs}s");
+        }
+        Ok(removed as u32)
+    }
+
+    /// Every save, oldest first — used for export.
+    pub fn all_saves(&self) -> Result<Vec<Save>> {
+        let conn = self.conn.lock().unwrap();
+        // Tie-break on id so exports are byte-stable between runs.
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {SAVE_COLS} FROM saves s ORDER BY s.created_at, s.id"
+        ))?;
+        let mut saves = stmt
+            .query_map([], row_to_save)?
+            .collect::<rusqlite::Result<Vec<Save>>>()?;
+        for save in &mut saves {
+            save.tags = tags_for(&conn, save.id)?;
+        }
+        Ok(saves)
+    }
+
     // ---- generic metadata key-value store ----
     //
     // Host-defined keys only; the core attaches no meaning to them. Used by
@@ -785,6 +829,11 @@ impl Vault {
                 content_hash = COALESCE(?4, content_hash),
                 archive_text = COALESCE(?5, archive_text),
                 archived_at = CASE WHEN ?5 IS NOT NULL THEN ?6 ELSE archived_at END,
+                -- Stamp the first time it goes dead; clear it on recovery.
+                dead_since = CASE
+                    WHEN ?1 = 'dead' THEN COALESCE(dead_since, ?6)
+                    ELSE NULL
+                END,
                 last_checked_at = ?6
              WHERE id = ?7",
             params![
@@ -978,6 +1027,7 @@ fn row_to_save(row: &Row) -> rusqlite::Result<Save> {
         thumbnail: row.get(13)?,
         archived_at: row.get(14)?,
         is_read: row.get(15)?,
+        dead_since: row.get(16)?,
     })
 }
 

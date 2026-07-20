@@ -208,6 +208,111 @@ pub fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+// ---- preferences (host-defined keys in the vault's meta store) ----
+
+#[tauri::command]
+pub fn get_pref(vault: VaultState, key: String) -> Result<Option<String>, String> {
+    vault.get_meta(&key).map_err(err)
+}
+
+#[tauri::command]
+pub fn set_pref(vault: VaultState, key: String, value: String) -> Result<(), String> {
+    vault.set_meta(&key, &value).map_err(err)
+}
+
+// ---- trash ----
+
+/// How long a dead link is kept before permanent deletion.
+pub const TRASH_GRACE_SECS: i64 = 30 * 24 * 60 * 60;
+
+/// Permanently delete links that stayed dead for the whole grace period.
+#[tauri::command]
+pub fn purge_trash(app: AppHandle, vault: VaultState) -> Result<u32, String> {
+    let removed = vault.purge_expired_dead(TRASH_GRACE_SECS).map_err(err)?;
+    if removed > 0 {
+        announce(&app);
+    }
+    Ok(removed)
+}
+
+/// Empty the trash now, regardless of how long links have been dead.
+#[tauri::command]
+pub fn empty_trash(app: AppHandle, vault: VaultState) -> Result<u32, String> {
+    let removed = vault.purge_expired_dead(-1).map_err(err)?;
+    if removed > 0 {
+        announce(&app);
+    }
+    Ok(removed)
+}
+
+// ---- export ----
+
+/// Serialize the whole vault. `format` is "json" (full fidelity) or "html"
+/// (Netscape bookmarks, readable by browsers and by our own importer).
+#[tauri::command]
+pub fn export_data(vault: VaultState, format: String) -> Result<String, String> {
+    let saves = vault.all_saves().map_err(err)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok(match format.as_str() {
+        "html" => websave_core::export::to_netscape_html(&saves),
+        _ => websave_core::export::to_json(&saves, now),
+    })
+}
+
+// ---- in-app preview ----
+
+/// Open a saved page in an isolated preview window.
+///
+/// The window label is deliberately NOT listed in any capability, so the
+/// remote page gets zero access to Tauri commands or the vault — it is just
+/// a sandboxed browser view.
+#[tauri::command]
+/// NOTE: this MUST stay `async`. Building a window needs the main thread, and
+/// a synchronous command holds it — which deadlocks instead of opening
+/// anything.
+pub async fn preview_save(app: AppHandle, url: String, title: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("only http(s) pages can be previewed".into());
+    }
+    let window_title = if title.trim().is_empty() {
+        "Preview".to_string()
+    } else {
+        format!("Preview — {title}")
+    };
+
+    // Reuse one preview window: navigating avoids the "label already exists"
+    // race you get from closing and instantly rebuilding.
+    if let Some(existing) = app.get_webview_window("preview") {
+        existing.navigate(parsed).map_err(|e| e.to_string())?;
+        let _ = existing.set_title(&window_title);
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        log::info!("preview: reused window for {url}");
+        return Ok(());
+    }
+
+    let win = tauri::WebviewWindowBuilder::new(
+        &app,
+        "preview",
+        tauri::WebviewUrl::External(parsed),
+    )
+    .title(&window_title)
+    .inner_size(1000.0, 720.0)
+    .min_inner_size(420.0, 320.0)
+    .build()
+    .map_err(|e| {
+        log::error!("preview: failed to open window for {url}: {e}");
+        e.to_string()
+    })?;
+    let _ = win.set_focus();
+    log::info!("preview: opened window for {url}");
+    Ok(())
+}
+
 /// Check one link immediately. Network-bound, so it runs on a blocking thread.
 #[tauri::command]
 pub async fn check_save_now(
@@ -223,29 +328,70 @@ pub async fn check_save_now(
     Ok(save)
 }
 
-/// Queue a re-check of every save in the background; emits "saves-updated"
-/// as results land. Returns the number of saves queued.
+/// Progress of a full re-check sweep, streamed to the UI so the button can
+/// show a real loading state instead of returning instantly.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecheckProgress {
+    done: usize,
+    total: usize,
+    finished: bool,
+}
+
+/// Queue a re-check of every save in the background. Emits "saves-updated"
+/// as results land and "recheck-progress" so the UI can show progress.
+/// Returns the number of saves queued.
 #[tauri::command]
 pub fn recheck_all(app: AppHandle, vault: VaultState) -> Result<i64, String> {
     let targets = vault.saves_due_for_check(-1, 10_000).map_err(err)?;
-    let count = targets.len() as i64;
-    log::info!("recheck_all: queueing {count} link check(s)");
+    let total = targets.len();
+    log::info!("recheck_all: queueing {total} link check(s)");
+
+    // Nothing to do — tell the UI immediately so it doesn't spin forever.
+    if total == 0 {
+        let _ = app.emit(
+            "recheck-progress",
+            RecheckProgress {
+                done: 0,
+                total: 0,
+                finished: true,
+            },
+        );
+        return Ok(0);
+    }
+
     let vault = vault.inner().clone();
     std::thread::spawn(move || {
         for (i, t) in targets.iter().enumerate() {
             let outcome = websave_core::check_url(&t.url, &t.content_hash);
             let _ = vault.apply_check(t.id, &outcome);
             vault.maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
-            // Stream progress to the UI every few results instead of one
-            // event per link.
+            // Checks are network-bound (~1/s), so one progress event each is
+            // naturally paced; the list itself refreshes every few results.
+            let _ = app.emit(
+                "recheck-progress",
+                RecheckProgress {
+                    done: i + 1,
+                    total,
+                    finished: false,
+                },
+            );
             if i % 5 == 4 {
                 let _ = app.emit("saves-updated", ());
             }
         }
         let _ = app.emit("saves-updated", ());
+        let _ = app.emit(
+            "recheck-progress",
+            RecheckProgress {
+                done: total,
+                total,
+                finished: true,
+            },
+        );
         log::info!("recheck_all: finished");
     });
-    Ok(count)
+    Ok(total as i64)
 }
 
 #[tauri::command]

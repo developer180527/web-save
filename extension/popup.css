@@ -1,6 +1,7 @@
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
+  --panel: #f6f6f8;
   --text: #1c1c21;
   --dim: #6e6e78;
   --border: #e0e0e6;
@@ -12,6 +13,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1e1e1e;
+    --panel: #161616;
     --text: #ededed;
     --dim: #9c9c9c;
     --border: #2d2d2d;
@@ -20,9 +22,9 @@
 }
 
 body {
-  width: 240px;
+  width: 300px;
   margin: 0;
-  padding: 12px;
+  padding: 10px;
   font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -33,26 +35,27 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
 
 .brand {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
+  flex: 1;
 }
 
 .status {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
+  font-size: 11px;
   color: var(--dim);
-  margin-bottom: 10px;
 }
 
 .status::before {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--dim);
   flex-shrink: 0;
@@ -66,9 +69,96 @@ body {
   background: var(--red);
 }
 
+.search {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.search:focus {
+  border-color: var(--accent);
+}
+
+.list {
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 6px 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--panel);
+}
+
+.row-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-host {
+  font-size: 10.5px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-dead {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+}
+
+.empty {
+  text-align: center;
+  color: var(--dim);
+  font-size: 12px;
+  padding: 18px 8px;
+}
+
 .primary {
   width: 100%;
-  padding: 9px;
+  padding: 8px;
   font: inherit;
   font-weight: 600;
   color: #fff;
@@ -85,8 +175,8 @@ body {
 
 .queued {
   color: var(--dim);
-  font-size: 12px;
-  margin-top: 8px;
+  font-size: 11px;
+  margin-top: 7px;
   text-align: center;
 }
 
@@ -96,8 +186,9 @@ body {
 
 .download {
   display: block;
-  margin-top: 10px;
+  margin-top: 8px;
   text-align: center;
+  font-size: 12px;
   color: var(--accent);
   text-decoration: none;
   font-weight: 500;
@@ -105,4 +196,9 @@ body {
 
 .download:hover {
   text-decoration: underline;
+}
+
+/* The `hidden` attribute must win over the display rules above. */
+[hidden] {
+  display: none !important;
 }

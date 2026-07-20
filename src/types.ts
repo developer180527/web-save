@@ -23,6 +23,8 @@ export interface Save {
   updatedAt: number;
   lastCheckedAt: number | null;
   archivedAt: number | null;
+  /** When the link was first found dead; drives the Trash countdown. */
+  deadSince: number | null;
 }
 
 export interface NewSave {

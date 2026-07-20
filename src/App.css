@@ -252,13 +252,35 @@ body.resizing .sidebar-resizer {
   color: var(--text-dim);
 }
 
+/* Quiet chrome: no divider, no button containers — just small dim controls
+   that step forward on hover. */
 .sidebar-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  gap: 4px;
+  padding: 8px 2px 0;
+}
+
+.sidebar-footer .btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 6px;
+  height: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 6px;
+}
+
+.sidebar-footer .btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-footer .icon-btn {
+  width: 26px;
+  height: 26px;
 }
 
 .icon-btn {
@@ -1741,4 +1763,182 @@ input:focus:not(:focus-visible) {
   font-size: 12px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- re-check button + spinner ---------- */
+
+.recheck-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.recheck-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.recheck-btn:disabled {
+  opacity: 1;
+  color: var(--accent);
+  cursor: default;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
+/* ---------- list row + card polish ---------- */
+
+/* Horizontal (list) rows: give the site icon a real tile so transparent or
+   tiny favicons still read as an icon instead of floating pixels. */
+.save-card:not(.grid-card) {
+  align-items: flex-start;
+  padding: 11px 13px;
+}
+
+.save-card:not(.grid-card) > .favicon {
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.save-card:not(.grid-card) > img.favicon {
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  object-fit: contain;
+}
+
+.save-card:not(.grid-card) > .favicon-fallback {
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* Tighter type hierarchy: title leads, metadata recedes. */
+.save-title {
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+}
+
+.save-meta {
+  font-size: 11.5px;
+  margin-top: 3px;
+  align-items: center;
+}
+
+.save-host {
+  font-weight: 500;
+}
+
+.save-description {
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin-top: 5px;
+}
+
+.save-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Grid cards: a little more breathing room under the cover image. */
+.grid-card .save-body {
+  padding: 11px 12px 13px;
+}
+
+.grid-card .save-title-row {
+  margin-bottom: 1px;
+}
+
+/* ---------- trash ---------- */
+
+.trash-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--red) 7%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--red) 30%, var(--border));
+  border-radius: 10px;
+}
+
+.trash-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+  color: var(--red);
+}
+
+.trash-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-banner-text strong {
+  font-size: 13px;
+}
+
+.trash-banner-text span {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+.purge-countdown {
+  color: var(--red);
+  font-weight: 500;
+}
+
+/* ---------- pointer-anchored context menu ---------- */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
 }

@@ -52,6 +52,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_decorum::init())
         .plugin(tauri_plugin_autostart::init(
@@ -166,6 +167,12 @@ pub fn run() {
             commands::extension_status,
             commands::vault_path,
             commands::app_version,
+            commands::get_pref,
+            commands::set_pref,
+            commands::purge_trash,
+            commands::empty_trash,
+            commands::export_data,
+            commands::preview_save,
             commands::check_save_now,
             commands::recheck_all,
             commands::logs_path,
@@ -200,6 +207,7 @@ fn spawn_monitor(app: AppHandle, vault: Arc<Vault>, wake: mpsc::Receiver<()>) {
         std::thread::sleep(Duration::from_secs(5));
         loop {
             run_due_checks(&app, &vault);
+            purge_trash_if_enabled(&app, &vault);
             match wake.recv_timeout(CHECK_INTERVAL) {
                 // Brief debounce so a burst of adds is checked as one batch.
                 Ok(()) => std::thread::sleep(Duration::from_secs(1)),
@@ -212,6 +220,24 @@ fn spawn_monitor(app: AppHandle, vault: Arc<Vault>, wake: mpsc::Receiver<()>) {
 
 /// Check everything currently due, in polite batches, emitting progress
 /// after each batch so the UI updates as statuses come in.
+/// Permanently remove links that stayed dead through the whole grace period.
+/// Opt-out via the `trash.auto_purge` preference; links that recover before
+/// the deadline clear their `dead_since` stamp and are never touched.
+fn purge_trash_if_enabled(app: &AppHandle, vault: &Arc<Vault>) {
+    let disabled = matches!(
+        vault.get_meta("trash.auto_purge").ok().flatten().as_deref(),
+        Some("false")
+    );
+    if disabled {
+        return;
+    }
+    if let Ok(removed) = vault.purge_expired_dead(commands::TRASH_GRACE_SECS) {
+        if removed > 0 {
+            let _ = app.emit("saves-updated", ());
+        }
+    }
+}
+
 fn run_due_checks(app: &AppHandle, vault: &Arc<Vault>) {
     loop {
         let Ok(targets) = vault.saves_due_for_check(CHECK_MAX_AGE_SECS, CHECK_BATCH) else {

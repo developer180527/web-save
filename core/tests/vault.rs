@@ -422,3 +422,72 @@ fn meta_key_value_roundtrip() {
         Some("1800000000")
     );
 }
+
+#[test]
+fn dead_since_is_stamped_on_death_and_cleared_on_recovery() {
+    let (_dir, vault) = vault();
+    let s = save(&vault, "https://rot.example", "Rots", &[]);
+    assert_eq!(s.dead_since, None);
+
+    let outcome = |status: LinkStatus| websave_core::CheckOutcome {
+        status,
+        http_status: Some(404),
+        redirect_url: None,
+        content_hash: None,
+        og_image: None,
+        archive_text: None,
+    };
+
+    vault.apply_check(s.id, &outcome(LinkStatus::Dead)).unwrap();
+    let dead = vault.get_save(s.id).unwrap();
+    let stamped = dead.dead_since.expect("dead_since stamped");
+
+    // Staying dead must not move the stamp (the grace period keeps running).
+    vault.apply_check(s.id, &outcome(LinkStatus::Dead)).unwrap();
+    assert_eq!(vault.get_save(s.id).unwrap().dead_since, Some(stamped));
+
+    // Recovery clears it, so the grace period restarts if it dies again.
+    vault.apply_check(s.id, &outcome(LinkStatus::Active)).unwrap();
+    assert_eq!(vault.get_save(s.id).unwrap().dead_since, None);
+}
+
+#[test]
+fn purge_only_removes_links_dead_past_the_grace_period() {
+    let (_dir, vault) = vault();
+    let old = save(&vault, "https://long-dead.example", "Long dead", &[]);
+    let fresh = save(&vault, "https://just-died.example", "Just died", &[]);
+    let alive = save(&vault, "https://alive.example", "Alive", &[]);
+
+    let outcome = |status: LinkStatus| websave_core::CheckOutcome {
+        status,
+        http_status: None,
+        redirect_url: None,
+        content_hash: None,
+        og_image: None,
+        archive_text: None,
+    };
+    vault.apply_check(old.id, &outcome(LinkStatus::Dead)).unwrap();
+    vault.apply_check(fresh.id, &outcome(LinkStatus::Dead)).unwrap();
+    vault.apply_check(alive.id, &outcome(LinkStatus::Active)).unwrap();
+
+    // Nothing is old enough yet.
+    assert_eq!(vault.purge_expired_dead(30 * 86_400).unwrap(), 0);
+    assert_eq!(vault.stats().unwrap().total, 3);
+
+    // A zero-length grace period expires everything currently dead.
+    assert_eq!(vault.purge_expired_dead(-1).unwrap(), 2);
+    let left = vault.list_saves(&ListQuery::default()).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].id, alive.id, "healthy links are never purged");
+}
+
+#[test]
+fn all_saves_returns_everything_with_tags_for_export() {
+    let (_dir, vault) = vault();
+    save(&vault, "https://a.example", "A", &["x"]);
+    save(&vault, "https://b.example", "B", &[]);
+    let all = vault.all_saves().unwrap();
+    assert_eq!(all.len(), 2);
+    let tagged = all.iter().find(|s| s.title == "A").unwrap();
+    assert_eq!(tagged.tags, vec!["x"]);
+}

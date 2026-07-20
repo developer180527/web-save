@@ -21,14 +21,22 @@ import SettingsPage, {
 } from "./components/SettingsPage";
 import ImportDialog from "./components/ImportDialog";
 import ExtensionBanner from "./components/ExtensionBanner";
+import TrashBanner from "./components/TrashBanner";
+import ContextMenu, { type MenuAction } from "./components/ContextMenu";
 import CommandPalette, {
   type PaletteAction,
 } from "./components/CommandPalette";
 import TitleBar from "./components/TitleBar";
 import {
+  CheckIcon,
   ChevronUpIcon,
   ClipboardIcon,
+  ExternalIcon,
+  EyeIcon,
   GridIcon,
+  PencilIcon,
+  StarIcon,
+  TrashIcon,
   ImportIcon,
   ListIcon,
   PlusIcon,
@@ -52,13 +60,101 @@ function App() {
   // A web URL sitting on the clipboard, surfaced as one-click "Paste & Add".
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
   const [handledClipboard, setHandledClipboard] = useState<string | null>(null);
-  const [rechecking, setRechecking] = useState(false);
+  // Live progress of a full re-check sweep, streamed from the engine.
+  const [recheck, setRecheck] = useState<{
+    done: number;
+    total: number;
+    finished: boolean;
+  } | null>(null);
+  const rechecking = recheck !== null && !recheck.finished;
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<"library" | "settings">("library");
   const [importOpen, setImportOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [vaultDir, setVaultDir] = useState("");
   const [extStatus, setExtStatus] = useState<ExtensionStatus | null>(null);
+  const [autoPurge, setAutoPurge] = useState(true);
+  // Right-click / ⋯ menu, positioned at the pointer.
+  const [menu, setMenu] = useState<{ x: number; y: number; save: Save } | null>(
+    null,
+  );
+
+  async function handlePreview(save: Save) {
+    try {
+      await api.previewSave(save.url, save.title);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  function menuActionsFor(save: Save): MenuAction[] {
+    return [
+      {
+        id: "open",
+        label: "Open in browser",
+        icon: <ExternalIcon size={14} />,
+        run: () => handleOpen(save),
+      },
+      {
+        id: "preview",
+        label: "Preview in app",
+        icon: <EyeIcon size={14} />,
+        run: () => handlePreview(save),
+      },
+      {
+        id: "edit",
+        label: "Edit details",
+        icon: <PencilIcon size={14} />,
+        run: () => setSelected(save),
+      },
+      {
+        id: "copy",
+        label: "Copy link",
+        icon: <ClipboardIcon size={14} />,
+        run: () => navigator.clipboard.writeText(save.url).catch(() => {}),
+      },
+      {
+        id: "star",
+        label: save.favorite ? "Remove from favorites" : "Add to favorites",
+        icon: <StarIcon size={14} filled={save.favorite} />,
+        run: () => handleToggleFavorite(save),
+      },
+      {
+        id: "read",
+        label: save.isRead ? "Mark unread" : "Mark read",
+        icon: <CheckIcon size={14} />,
+        run: () => handleToggleRead(save),
+      },
+      {
+        id: "delete",
+        label: "Delete",
+        icon: <TrashIcon size={14} />,
+        danger: true,
+        run: () => handleDelete(save),
+      },
+    ];
+  }
+  useEffect(() => {
+    api
+      .getPref("trash.auto_purge")
+      .then((v) => setAutoPurge(v !== "false"))
+      .catch(() => {});
+  }, []);
+
+  async function handleEmptyTrash() {
+    if (
+      !confirm(
+        "Permanently delete every link in the trash? This cannot be undone.",
+      )
+    )
+      return;
+    try {
+      await api.emptyTrash();
+      await refreshAll();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
   const [extBannerDismissed, setExtBannerDismissed] = useState(
     () => localStorage.getItem("extBannerDismissed") === "true",
   );
@@ -266,6 +362,26 @@ function App() {
     };
   }, []);
 
+  // Re-check sweep progress → drives the footer button's loading state.
+  useEffect(() => {
+    let clearTimer: ReturnType<typeof setTimeout>;
+    const unlisten = listen<{
+      done: number;
+      total: number;
+      finished: boolean;
+    }>("recheck-progress", (e) => {
+      setRecheck(e.payload);
+      if (e.payload.finished) {
+        // Let "Done" sit for a beat, then return to the idle label.
+        clearTimer = setTimeout(() => setRecheck(null), 1800);
+      }
+    });
+    return () => {
+      clearTimeout(clearTimer);
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   function applyChange(updated: Save) {
     setSaves((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
     setSelected((prev) => (prev?.id === updated.id ? updated : prev));
@@ -351,6 +467,8 @@ function App() {
   }
 
   /** Plain click opens; ⌘-click toggles selection; shift-click selects a range. */
+  /// Single click focuses (and ⌘/shift extend the selection); opening is
+  /// reserved for double click so a stray click never launches a browser.
   function handleCardClick(e: React.MouseEvent, save: Save) {
     if (e.metaKey || e.ctrlKey) {
       toggleSelect(save.id);
@@ -370,7 +488,10 @@ function App() {
         return;
       }
     }
-    handleOpen(save);
+    // Plain click: move keyboard focus here and clear any multi-selection.
+    setFocusedIdx(saves.findIndex((s) => s.id === save.id));
+    setAnchorId(save.id);
+    if (selectedIds.size > 0) setSelectedIds(new Set());
   }
 
   async function handleDelete(save: Save) {
@@ -386,13 +507,14 @@ function App() {
   }
 
   async function handleRecheckAll() {
-    setRechecking(true);
+    if (rechecking) return;
+    // Optimistic spinner; the engine's progress events take over immediately.
+    setRecheck({ done: 0, total: 0, finished: false });
     try {
       await api.recheckAll();
     } catch (e) {
       setError(String(e));
-    } finally {
-      setRechecking(false);
+      setRecheck(null);
     }
   }
 
@@ -600,6 +722,7 @@ function App() {
         }
         onRecheckAll={handleRecheckAll}
         rechecking={rechecking}
+        recheckProgress={recheck}
         onOpenSettings={() =>
           setScreen((s) => (s === "settings" ? "library" : "settings"))
         }
@@ -743,6 +866,14 @@ function App() {
             </div>
           )}
 
+          {view === "dead" && !activeTag && (
+            <TrashBanner
+              count={stats?.dead ?? 0}
+              autoPurge={autoPurge}
+              onEmptyTrash={handleEmptyTrash}
+            />
+          )}
+
           {extStatus &&
             extStatus.lastSeen === null &&
             !extBannerDismissed &&
@@ -860,9 +991,8 @@ function App() {
                 variant={viewMode === "cards" ? "card" : "list"}
                 vaultPath={vaultDir}
                 onCardClick={handleCardClick}
-                onOpen={handleOpen}
-                onEdit={setSelected}
-                onDelete={handleDelete}
+                onActivate={handleOpen}
+                onMenu={(x, y, s) => setMenu({ x, y, save: s })}
                 onToggleFavorite={handleToggleFavorite}
                 onPickTag={(t) => setActiveTag(t)}
               />
@@ -878,6 +1008,15 @@ function App() {
             )}
           </div>
         </main>
+      )}
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          actions={menuActionsFor(menu.save)}
+          onClose={() => setMenu(null)}
+        />
       )}
 
       {importOpen && (

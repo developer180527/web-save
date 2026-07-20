@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Save } from "../types";
-import { hostOf, relativeTime, STATUS_LABELS } from "../utils";
-import {
-  CheckIcon,
-  DotsIcon,
-  ExternalIcon,
-  PencilIcon,
-  StarIcon,
-  TrashIcon,
-} from "./Icons";
+import { daysUntilPurge, hostOf, relativeTime, STATUS_LABELS } from "../utils";
+import { CheckIcon, DotsIcon, StarIcon } from "./Icons";
 
 interface Props {
   save: Save;
@@ -23,9 +16,10 @@ interface Props {
   vaultPath: string;
   /** Raw click — the app decides between open and (multi-)select. */
   onCardClick: (e: React.MouseEvent, save: Save) => void;
-  onOpen: (save: Save) => void;
-  onEdit: (save: Save) => void;
-  onDelete: (save: Save) => void;
+  /** Double click activates (opens in the browser). */
+  onActivate: (save: Save) => void;
+  /** Open the shared context menu at these viewport coords. */
+  onMenu: (x: number, y: number, save: Save) => void;
   onToggleFavorite: (save: Save) => void;
   onPickTag: (tag: string) => void;
 }
@@ -97,13 +91,11 @@ export default function SaveCard({
   variant,
   vaultPath,
   onCardClick,
-  onOpen,
-  onEdit,
-  onDelete,
+  onActivate,
+  onMenu,
   onToggleFavorite,
   onPickTag,
 }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -112,23 +104,18 @@ export default function SaveCard({
     }
   }, [focused]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = () => setMenuOpen(false);
-    window.addEventListener("click", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [menuOpen]);
 
   return (
     <article
       ref={cardRef}
       className={`save-card ${variant === "card" ? "grid-card" : ""} ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${bulkSelected ? "bulk-selected" : ""}`}
-      title={save.url}
+      title={`${save.url}\n\nDouble-click to open`}
       onClick={(e) => onCardClick(e, save)}
+      onDoubleClick={() => onActivate(save)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onMenu(e.clientX, e.clientY, save);
+      }}
     >
       {bulkSelected && (
         <span className="bulk-check">
@@ -161,6 +148,19 @@ export default function SaveCard({
           <span className="save-host">{hostOf(save.url)}</span>
           <span className="save-dot">·</span>
           <span>{relativeTime(save.createdAt)}</span>
+          {save.status === "dead" && save.deadSince != null && (
+            <>
+              <span className="save-dot">·</span>
+              <span className="purge-countdown">
+                {(() => {
+                  const days = daysUntilPurge(save.deadSince);
+                  return days === 0
+                    ? "deletes soon"
+                    : `deletes in ${days}d`;
+                })()}
+              </span>
+            </>
+          )}
         </div>
         {save.description && (
           <p className="save-description">{save.description}</p>
@@ -191,31 +191,18 @@ export default function SaveCard({
         >
           <StarIcon size={16} filled={save.favorite} />
         </button>
-        <div className="menu-wrap">
-          <button
-            className={`menu-btn ${menuOpen ? "open" : ""}`}
-            title="More options"
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            <DotsIcon size={16} />
-          </button>
-          {menuOpen && (
-            <div className="menu">
-              <button className="menu-item" onClick={() => onEdit(save)}>
-                <PencilIcon size={14} /> Edit details
-              </button>
-              <button className="menu-item" onClick={() => onOpen(save)}>
-                <ExternalIcon size={14} /> Open in browser
-              </button>
-              <button
-                className="menu-item menu-item-danger"
-                onClick={() => onDelete(save)}
-              >
-                <TrashIcon size={14} /> Delete
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          className="menu-btn"
+          title="More options"
+          onClick={(e) => {
+            const r = (e.target as HTMLElement)
+              .closest("button")!
+              .getBoundingClientRect();
+            onMenu(r.left, r.bottom + 4, save);
+          }}
+        >
+          <DotsIcon size={16} />
+        </button>
       </div>
     </article>
   );

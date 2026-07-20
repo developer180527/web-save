@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { relativeTime } from "../utils";
 import * as api from "../api";
 
@@ -30,6 +32,40 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
     null,
   );
   const [version, setVersion] = useState("");
+  const [autoPurge, setAutoPurge] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  async function toggleAutoPurge() {
+    const next = !autoPurge;
+    setAutoPurge(next);
+    try {
+      await api.setPref("trash.auto_purge", String(next));
+    } catch (e) {
+      onError(String(e));
+    }
+  }
+
+  async function handleExport(format: "json" | "html") {
+    setExporting(true);
+    try {
+      const contents = await api.exportData(format);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const path = await save({
+        defaultPath: `websave-${stamp}.${format}`,
+        filters: [
+          {
+            name: format === "json" ? "JSON backup" : "Bookmarks HTML",
+            extensions: [format],
+          },
+        ],
+      });
+      if (path) await writeTextFile(path, contents);
+    } catch (e) {
+      onError(String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
   const [menubarAutolaunch, setMenubarAutolaunch] = useState(
     () => localStorage.getItem(MENUBAR_AUTOLAUNCH_KEY) === "true",
   );
@@ -50,6 +86,10 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
     isEnabled().then(setAutostart).catch((e) => onError(String(e)));
     api.extensionStatus().then(setExt).catch(() => {});
     api.appVersion().then(setVersion).catch(() => {});
+    api
+      .getPref("trash.auto_purge")
+      .then((v) => setAutoPurge(v !== "false"))
+      .catch(() => {});
   }, [onError]);
 
   async function toggleAutostart() {
@@ -134,6 +174,50 @@ export default function SettingsPage({ theme, onThemeChange, onError }: Props) {
           </label>
         </section>
       )}
+
+      <section className="settings-section">
+        <h2>Trash</h2>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={autoPurge}
+            onChange={toggleAutoPurge}
+          />
+          Permanently delete links after 30 days in the trash
+        </label>
+        <p className="settings-text">
+          Links that stop responding move to the trash but keep being
+          health-checked — if a site comes back, it returns to your library
+          automatically. Turn this off to keep dead links until you empty the
+          trash yourself.
+        </p>
+      </section>
+
+      <section className="settings-section">
+        <h2>Export</h2>
+        <p className="settings-text">
+          Your whole library, on demand. <strong>JSON</strong> is a complete
+          backup (notes, tags, status, timestamps). <strong>HTML</strong> is
+          the standard bookmarks format — importable by any browser, and by
+          WebSave itself.
+        </p>
+        <div className="settings-row">
+          <button
+            className="btn"
+            disabled={exporting}
+            onClick={() => handleExport("json")}
+          >
+            Export JSON…
+          </button>
+          <button
+            className="btn"
+            disabled={exporting}
+            onClick={() => handleExport("html")}
+          >
+            Export HTML…
+          </button>
+        </div>
+      </section>
 
       <section className="settings-section">
         <h2>Storage</h2>
