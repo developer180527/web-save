@@ -107,10 +107,7 @@ pub fn parse_netscape_html(content: &str) -> Vec<ImportItem> {
         let dl_open = find_from(&lower, "<dl", pos);
         let dl_close = find_from(&lower, "</dl", pos);
 
-        let next = [h3, a, dl_open, dl_close]
-            .into_iter()
-            .flatten()
-            .min();
+        let next = [h3, a, dl_open, dl_close].into_iter().flatten().min();
         let Some(next) = next else { break };
 
         if Some(next) == dl_close {
@@ -125,12 +122,16 @@ pub fn parse_netscape_html(content: &str) -> Vec<ImportItem> {
             pos = end;
         } else {
             // <a ...>title</a>
-            let Some(tag_end) = find_from(&lower, ">", next) else { break };
+            let Some(tag_end) = find_from(&lower, ">", next) else {
+                break;
+            };
             let tag = &content[next..tag_end];
             let (text, end) = element_text(content, &lower, next, "</a");
             pos = end;
 
-            let Some(url) = attr(tag, "href") else { continue };
+            let Some(url) = attr(tag, "href") else {
+                continue;
+            };
             if !url.starts_with("http://") && !url.starts_with("https://") {
                 continue;
             }
@@ -268,7 +269,10 @@ fn parse_csv(content: &str) -> Option<(ImportFormat, Vec<ImportItem>)> {
     let mut items = Vec::new();
     for record in reader.records().flatten() {
         let field = |i: Option<usize>| {
-            i.and_then(|i| record.get(i)).unwrap_or("").trim().to_string()
+            i.and_then(|i| record.get(i))
+                .unwrap_or("")
+                .trim()
+                .to_string()
         };
         let url = field(Some(url_col));
         if url.is_empty() {
@@ -276,9 +280,7 @@ fn parse_csv(content: &str) -> Option<(ImportFormat, Vec<ImportItem>)> {
         }
         let mut tags = split_tags(&field(tags_col));
         let folder = field(folder_col);
-        if !folder.is_empty()
-            && !GENERIC_FOLDERS.contains(&folder.to_ascii_lowercase().as_str())
-        {
+        if !folder.is_empty() && !GENERIC_FOLDERS.contains(&folder.to_ascii_lowercase().as_str()) {
             tags.push(folder);
         }
         items.push(ImportItem {
@@ -310,10 +312,7 @@ fn split_tags(raw: &str) -> Vec<String> {
 pub fn parse_url_list(content: &str) -> Vec<ImportItem> {
     let mut items = Vec::new();
     for line in content.lines() {
-        let line = line
-            .trim()
-            .trim_start_matches(['-', '*', '>'])
-            .trim();
+        let line = line.trim().trim_start_matches(['-', '*', '>']).trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }

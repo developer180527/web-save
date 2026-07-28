@@ -130,5 +130,8 @@ the toolbar popup, or use the link/selection context-menu entries.
 - [x] Thumbnails (og:image + extension screenshots), bookmark import,
       archive snapshots (searchable readable-text copies of saved pages)
 - [x] Firefox extension (shared source → per-browser packages)
+- [x] iPad app (SwiftUI + websave-core via UniFFI; foreground health checks) —
+      runs in the iOS simulator via `bash ios-app/build.sh`. Share Extension
+      capture + App Group vault are the next step.
 - [ ] Later — export, Safari extension (native wrapper), Noter plugin packaging
 >>>>>>> af5cbee (Did changes in background saving and updated macos menubar app building.)

@@ -363,7 +363,7 @@ pub fn recheck_all(app: AppHandle, vault: VaultState) -> Result<i64, String> {
     let vault = vault.inner().clone();
     std::thread::spawn(move || {
         for (i, t) in targets.iter().enumerate() {
-            let outcome = websave_core::check_url(&t.url, &t.content_hash);
+            let outcome = websave_core::check_url(&t.url, &t.content_hash, t.hash_algo);
             let _ = vault.apply_check(t.id, &outcome);
             vault.maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
             // Checks are network-bound (~1/s), so one progress event each is

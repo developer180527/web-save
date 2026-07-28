@@ -36,6 +36,8 @@ pub struct SaveSummary {
     pub favorite: bool,
     pub status: String,
     pub created_at: i64,
+    pub is_read: bool,
+    pub tags: Vec<String>,
 }
 
 fn summarize(s: websave_core::Save) -> SaveSummary {
@@ -47,6 +49,8 @@ fn summarize(s: websave_core::Save) -> SaveSummary {
         favorite: s.favorite,
         status: s.status.as_str().to_string(),
         created_at: s.created_at,
+        is_read: s.is_read,
+        tags: s.tags,
     }
 }
 
@@ -94,5 +98,37 @@ impl VaultHandle {
     pub fn set_favorite(&self, id: i64, favorite: bool) -> Result<(), VaultError> {
         self.inner.set_favorite(id, favorite)?;
         Ok(())
+    }
+
+    /// Capture a URL (upsert by canonical URL), returning the resulting save.
+    /// This is what the Share Extension and the in-app "Add" call.
+    pub fn add(&self, url: String, title: String) -> Result<SaveSummary, VaultError> {
+        let save = self.inner.add_save(websave_core::NewSave {
+            url,
+            title,
+            ..Default::default()
+        })?;
+        Ok(summarize(save))
+    }
+
+    pub fn delete(&self, id: i64) -> Result<(), VaultError> {
+        self.inner.delete_save(id)?;
+        Ok(())
+    }
+
+    /// A foreground health-check sweep: iOS can't run a background daemon, so
+    /// the app checks stale links while it's open. Checks up to `limit` links
+    /// that haven't been verified within `max_age_secs`, blocking on the
+    /// network — call it off the main actor. Returns how many were checked.
+    pub fn check_due(&self, max_age_secs: i64, limit: i64) -> Result<u32, VaultError> {
+        let targets = self.inner.saves_due_for_check(max_age_secs, limit)?;
+        let count = targets.len() as u32;
+        for t in &targets {
+            let outcome = websave_core::check_url(&t.url, &t.content_hash, t.hash_algo);
+            self.inner.apply_check(t.id, &outcome)?;
+            self.inner
+                .maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
+        }
+        Ok(count)
     }
 }

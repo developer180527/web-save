@@ -248,7 +248,7 @@ fn run_due_checks(app: &AppHandle, vault: &Arc<Vault>) {
         }
         log::info!("monitor: checking {} link(s)", targets.len());
         for t in &targets {
-            let outcome = websave_core::check_url(&t.url, &t.content_hash);
+            let outcome = websave_core::check_url(&t.url, &t.content_hash, t.hash_algo);
             let _ = vault.apply_check(t.id, &outcome);
             vault.maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
         }

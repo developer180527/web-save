@@ -17,7 +17,8 @@ pub const DB_FILE: &str = "websave.db";
 pub const ASSETS_DIR: &str = "assets";
 
 /// Schema migrations, applied in order and tracked via `PRAGMA user_version`.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE saves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     url TEXT NOT NULL UNIQUE,
@@ -143,7 +144,15 @@ CREATE TABLE meta (
     r#"
 ALTER TABLE saves ADD COLUMN dead_since INTEGER;
 UPDATE saves SET dead_since = last_checked_at WHERE status = 'dead';
-"#];
+"#,
+    // v7: which hash basis `content_hash` was computed under. Existing rows
+    // keep 0 (raw response bytes); the next check re-baselines them to the
+    // current basis without reporting a spurious change. See
+    // `docs/content-hashing.md`.
+    r#"
+ALTER TABLE saves ADD COLUMN content_hash_algo INTEGER NOT NULL DEFAULT 0;
+"#,
+];
 
 const SAVE_COLS: &str = "s.id, s.url, s.title, s.description, s.notes, s.favicon_url, s.favorite, \
      s.status, s.redirect_url, s.http_status, s.created_at, s.updated_at, s.last_checked_at, \
@@ -496,7 +505,8 @@ impl Vault {
         }
         let changed = conn.execute(
             "UPDATE saves SET url = ?1, redirect_url = '', status = 'unchecked',
-                content_hash = '', http_status = NULL, last_checked_at = NULL,
+                content_hash = '', content_hash_algo = 0,
+                http_status = NULL, last_checked_at = NULL,
                 updated_at = ?2
              WHERE id = ?3",
             params![url, now(), id],
@@ -789,7 +799,7 @@ impl Vault {
     pub fn saves_due_for_check(&self, max_age_secs: i64, limit: i64) -> Result<Vec<CheckTarget>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, url, content_hash FROM saves
+            "SELECT id, url, content_hash, content_hash_algo FROM saves
              WHERE last_checked_at IS NULL OR last_checked_at < ?1
              ORDER BY COALESCE(last_checked_at, 0) ASC LIMIT ?2",
         )?;
@@ -799,6 +809,7 @@ impl Vault {
                     id: r.get(0)?,
                     url: r.get(1)?,
                     content_hash: r.get(2)?,
+                    hash_algo: r.get::<_, i64>(3)? as u32,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -827,6 +838,11 @@ impl Vault {
                 http_status = ?2,
                 redirect_url = COALESCE(?3, redirect_url),
                 content_hash = COALESCE(?4, content_hash),
+                -- Stamp the basis alongside the hash, so a future change to
+                -- the hashing rule re-baselines instead of crying `changed`.
+                content_hash_algo = CASE
+                    WHEN ?4 IS NOT NULL THEN ?8 ELSE content_hash_algo
+                END,
                 archive_text = COALESCE(?5, archive_text),
                 archived_at = CASE WHEN ?5 IS NOT NULL THEN ?6 ELSE archived_at END,
                 -- Stamp the first time it goes dead; clear it on recovery.
@@ -843,7 +859,8 @@ impl Vault {
                 outcome.content_hash,
                 archive,
                 now(),
-                id
+                id,
+                monitor::HASH_ALGO as i64
             ],
         )?;
         if changed == 0 {
@@ -917,20 +934,21 @@ impl Vault {
         let target = {
             let conn = self.conn.lock().unwrap();
             conn.query_row(
-                "SELECT id, url, content_hash FROM saves WHERE id = ?1",
+                "SELECT id, url, content_hash, content_hash_algo FROM saves WHERE id = ?1",
                 params![id],
                 |r| {
                     Ok(CheckTarget {
                         id: r.get(0)?,
                         url: r.get(1)?,
                         content_hash: r.get(2)?,
+                        hash_algo: r.get::<_, i64>(3)? as u32,
                     })
                 },
             )
             .optional()?
             .ok_or(Error::NotFound(id))?
         };
-        let outcome = monitor::check_url(&target.url, &target.content_hash);
+        let outcome = monitor::check_url(&target.url, &target.content_hash, target.hash_algo);
         self.apply_check(id, &outcome)?;
         self.maybe_fetch_thumbnail(id, outcome.og_image.as_deref());
         self.get_save(id)

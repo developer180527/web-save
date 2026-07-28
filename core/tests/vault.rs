@@ -30,7 +30,12 @@ fn open_creates_vault_layout() {
 #[test]
 fn add_and_get_roundtrip() {
     let (_dir, vault) = vault();
-    let s = save(&vault, "https://tauri.app/start", "Tauri Start", &["rust", "desktop"]);
+    let s = save(
+        &vault,
+        "https://tauri.app/start",
+        "Tauri Start",
+        &["rust", "desktop"],
+    );
     assert_eq!(s.title, "Tauri Start");
     assert_eq!(s.tags, vec!["desktop", "rust"]);
     assert_eq!(s.status, LinkStatus::Unchecked);
@@ -77,7 +82,12 @@ fn rejects_invalid_urls() {
 #[test]
 fn fts_searches_title_url_notes_and_tags_with_prefixes() {
     let (_dir, vault) = vault();
-    let a = save(&vault, "https://doc.rust-lang.org/book", "The Book", &["learning"]);
+    let a = save(
+        &vault,
+        "https://doc.rust-lang.org/book",
+        "The Book",
+        &["learning"],
+    );
     save(&vault, "https://react.dev", "React", &["javascript"]);
     vault
         .update_save(
@@ -134,12 +144,22 @@ fn search_reflects_tag_and_note_edits() {
 #[test]
 fn set_tags_dedupes_and_cleans_orphans() {
     let (_dir, vault) = vault();
-    let a = save(&vault, "https://a.example", "A", &["Rust", "rust", " rust ", "web"]);
+    let a = save(
+        &vault,
+        "https://a.example",
+        "A",
+        &["Rust", "rust", " rust ", "web"],
+    );
     assert_eq!(a.tags.len(), 2, "case-insensitive dedupe: {:?}", a.tags);
 
     let b = save(&vault, "https://b.example", "B", &["web"]);
     vault.set_tags(a.id, &[]).unwrap();
-    let names: Vec<String> = vault.list_tags().unwrap().into_iter().map(|t| t.name).collect();
+    let names: Vec<String> = vault
+        .list_tags()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
     assert_eq!(names, vec!["web"], "orphaned 'Rust' tag removed");
 
     vault.set_tags(b.id, &[]).unwrap();
@@ -229,7 +249,12 @@ fn due_for_check_orders_by_staleness_and_respects_age() {
 #[test]
 fn delete_removes_save_and_index_entry() {
     let (_dir, vault) = vault();
-    let s = save(&vault, "https://gone.example", "Disappearing act", &["temp"]);
+    let s = save(
+        &vault,
+        "https://gone.example",
+        "Disappearing act",
+        &["temp"],
+    );
     vault.delete_save(s.id).unwrap();
 
     assert!(matches!(vault.get_save(s.id), Err(Error::NotFound(_))));
@@ -311,14 +336,30 @@ fn urls_are_canonicalized_for_dedupe() {
         "Post",
         &[],
     );
-    assert_eq!(a.url, "https://blog.example/post?id=7", "tracking stripped, real params kept");
+    assert_eq!(
+        a.url, "https://blog.example/post?id=7",
+        "tracking stripped, real params kept"
+    );
 
     // The same article via a different tracking link dedupes onto one save.
-    let b = save(&vault, "https://blog.example/post?id=7&gclid=zzz", "Post again", &[]);
+    let b = save(
+        &vault,
+        "https://blog.example/post?id=7&gclid=zzz",
+        "Post again",
+        &[],
+    );
     assert_eq!(a.id, b.id);
 
-    let c = save(&vault, "https://blog.example/clean?utm_medium=mail", "Clean", &[]);
-    assert_eq!(c.url, "https://blog.example/clean", "empty query removed entirely");
+    let c = save(
+        &vault,
+        "https://blog.example/clean?utm_medium=mail",
+        "Clean",
+        &[],
+    );
+    assert_eq!(
+        c.url, "https://blog.example/clean",
+        "empty query removed entirely"
+    );
 }
 
 #[test]
@@ -346,7 +387,15 @@ fn read_flag_and_inbox_filter() {
 fn bulk_operations() {
     let (_dir, vault) = vault();
     let ids: Vec<i64> = (1..=4)
-        .map(|i| save(&vault, &format!("https://x{i}.example"), &format!("X{i}"), &[]).id)
+        .map(|i| {
+            save(
+                &vault,
+                &format!("https://x{i}.example"),
+                &format!("X{i}"),
+                &[],
+            )
+            .id
+        })
         .collect();
 
     vault.set_favorite_many(&ids[..2], true).unwrap();
@@ -363,7 +412,11 @@ fn bulk_operations() {
 
     vault.delete_many(&ids[..3]).unwrap();
     assert_eq!(vault.stats().unwrap().total, 1);
-    assert_eq!(vault.list_tags().unwrap().len(), 1, "tag survives on remaining save");
+    assert_eq!(
+        vault.list_tags().unwrap().len(),
+        1,
+        "tag survives on remaining save"
+    );
 }
 
 #[test]
@@ -447,7 +500,9 @@ fn dead_since_is_stamped_on_death_and_cleared_on_recovery() {
     assert_eq!(vault.get_save(s.id).unwrap().dead_since, Some(stamped));
 
     // Recovery clears it, so the grace period restarts if it dies again.
-    vault.apply_check(s.id, &outcome(LinkStatus::Active)).unwrap();
+    vault
+        .apply_check(s.id, &outcome(LinkStatus::Active))
+        .unwrap();
     assert_eq!(vault.get_save(s.id).unwrap().dead_since, None);
 }
 
@@ -466,9 +521,15 @@ fn purge_only_removes_links_dead_past_the_grace_period() {
         og_image: None,
         archive_text: None,
     };
-    vault.apply_check(old.id, &outcome(LinkStatus::Dead)).unwrap();
-    vault.apply_check(fresh.id, &outcome(LinkStatus::Dead)).unwrap();
-    vault.apply_check(alive.id, &outcome(LinkStatus::Active)).unwrap();
+    vault
+        .apply_check(old.id, &outcome(LinkStatus::Dead))
+        .unwrap();
+    vault
+        .apply_check(fresh.id, &outcome(LinkStatus::Dead))
+        .unwrap();
+    vault
+        .apply_check(alive.id, &outcome(LinkStatus::Active))
+        .unwrap();
 
     // Nothing is old enough yet.
     assert_eq!(vault.purge_expired_dead(30 * 86_400).unwrap(), 0);

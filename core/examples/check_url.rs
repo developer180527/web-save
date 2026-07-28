@@ -2,10 +2,8 @@
 //! `cargo run -p websave-core --example check_url -- https://crates.io/`
 
 fn main() {
-    let url = std::env::args()
-        .nth(1)
-        .expect("usage: check_url <url>");
-    let outcome = websave_core::check_url(&url, "");
+    let url = std::env::args().nth(1).expect("usage: check_url <url>");
+    let outcome = websave_core::check_url(&url, "", websave_core::HASH_ALGO);
     println!(
         "{url}\n  status: {:?}\n  http:   {:?}\n  redirect: {:?}",
         outcome.status, outcome.http_status, outcome.redirect_url

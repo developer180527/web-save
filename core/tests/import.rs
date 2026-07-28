@@ -40,7 +40,11 @@ fn netscape_html_folders_dates_and_tags() {
     let tauri = &items[2];
     assert_eq!(tauri.title, "Tauri");
     assert_eq!(tauri.created_at, Some(1_700_000_000), "ms normalized");
-    assert!(tauri.tags.is_empty(), "folder stack unwound: {:?}", tauri.tags);
+    assert!(
+        tauri.tags.is_empty(),
+        "folder stack unwound: {:?}",
+        tauri.tags
+    );
 }
 
 #[test]
@@ -149,15 +153,17 @@ fn import_merges_without_destroying_user_data() {
 
     let preview = vault.preview_import(&items).unwrap();
     assert_eq!(
-        (preview.total, preview.new, preview.existing, preview.invalid),
+        (
+            preview.total,
+            preview.new,
+            preview.existing,
+            preview.invalid
+        ),
         (3, 1, 1, 1)
     );
 
     let report = vault.import_items(&items).unwrap();
-    assert_eq!(
-        (report.new, report.existing, report.invalid),
-        (1, 1, 1)
-    );
+    assert_eq!((report.new, report.existing, report.invalid), (1, 1, 1));
 
     let merged = vault.get_save(existing.id).unwrap();
     assert_eq!(merged.title, "My Tauri title", "user title not overwritten");
