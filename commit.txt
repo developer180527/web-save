@@ -1,0 +1,30 @@
+Port the React themes and stand up the three shells
+
+The first real UI step of the Flutter migration: WebSave's design
+vocabulary as a flutter_theme_engine ThemeModel, and the layout scaffold
+the feature screens will hang off.
+
+WebSaveTheme carries the tokens Material has no word for -- the five
+link-health colours, hover/pressed/selected surfaces, and the metrics
+(row height, icon tile, hit target) -- and projects the rest onto
+ThemeData. Every colour in the two packs is lifted verbatim from the CSS
+custom properties in src/App.css, with the variable named beside it, so
+any visual difference from the React app is now a bug rather than taste.
+ColorScheme is built explicitly rather than seeded, which would have let
+Material re-derive surfaces and shift the palette.
+
+Layout is kept strictly apart from theme. LayoutScope picks desktop,
+tablet or mobile from window width alone -- a narrow Mac window gets the
+compact layout, and an iPad with a trackpad is not treated as a phone.
+The two meet only at PointerDensityTrigger, which swaps a pack for its
+generated _touch variant when the pointer is coarse; no widget branches
+on Platform.
+
+VaultThemeStore persists the selection in the vault's meta table rather
+than platform preferences, so the choice travels with the user's data --
+the same vault opened on another device comes up in the same theme.
+
+SaveRow applies the hover audit the CSS forced: information is always
+visible, actions are hover-revealed only where a pointer exists and
+long-press elsewhere. That split has to be made for every remaining
+screen as it comes across.

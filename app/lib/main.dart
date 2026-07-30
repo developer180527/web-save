@@ -1,9 +1,8 @@
-// Phase 0 of the Flutter migration: prove the bridge.
+// Bootstrapping: find the Rust library, open the vault, build the theme
+// engine, hand off to app.dart.
 //
-// This opens the *real* vault the Tauri app uses and renders it. It is
-// deliberately not a port of the UI — no theming, no sidebar, no editing.
-// The only question it answers is whether Dart can talk to `websave-core`
-// against real data, which is the thing every later phase depends on.
+// Everything UI lives elsewhere — this file only exists to get those three
+// things wired before first paint.
 //
 // Dev-time note: the Rust library is loaded from `target/` by absolute path
 // rather than bundled. Wiring cargokit into the Xcode build is a Phase 4
@@ -16,8 +15,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibrary;
 import 'package:path_provider/path_provider.dart';
 
+import 'app.dart';
 import 'src/rust/api/vault_api.dart';
-import 'world_map.dart';
 import 'src/rust/frb_generated.dart';
 
 /// Where the Tauri app keeps its vault, so both frontends see one dataset.
@@ -72,7 +71,10 @@ Future<void> main() async {
     }
     await RustLib.init(externalLibrary: ExternalLibrary.open(libPath));
     final opened = await openVault(path: await tauriVaultPath());
-    runApp(WebSaveProbe(vaultPath: opened));
+    // The engine reads its saved selection from the vault, so it can only be
+    // built once the vault is open.
+    final engine = await createThemeEngine();
+    runApp(WebSaveApp(engine: engine, vaultPath: opened));
   } catch (e, stack) {
     runApp(StartupFailure(message: '$e', stack: '$stack'));
   }
@@ -113,191 +115,3 @@ class StartupFailure extends StatelessWidget {
   }
 }
 
-class WebSaveProbe extends StatelessWidget {
-  const WebSaveProbe({super.key, required this.vaultPath});
-  final String vaultPath;
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'WebSave (Flutter probe)',
-      // The banner sits exactly where the AppBar actions render.
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4C7DF0)),
-        useMaterial3: true,
-      ),
-      home: SaveListScreen(vaultPath: vaultPath),
-    );
-  }
-}
-
-class SaveListScreen extends StatefulWidget {
-  const SaveListScreen({super.key, required this.vaultPath});
-  final String vaultPath;
-
-  @override
-  State<SaveListScreen> createState() => _SaveListScreenState();
-}
-
-class _SaveListScreenState extends State<SaveListScreen> {
-  String _query = '';
-  late Future<(List<SaveView>, StatsView)> _data;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  void _load() {
-    _data = Future.wait([
-      listSaves(query: _query.isEmpty ? null : _query, limit: 500),
-      vaultStats(),
-    ]).then((r) => (r[0] as List<SaveView>, r[1] as StatsView));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('WebSave — Flutter probe'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.public),
-            tooltip: 'Served from',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const WorldMapScreen()),
-            ),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: 'Search the real vault (FTS5)…',
-                prefixIcon: Icon(Icons.search),
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) => setState(() {
-                _query = value;
-                _load();
-              }),
-            ),
-          ),
-        ),
-      ),
-      body: FutureBuilder<(List<SaveView>, StatsView)>(
-        future: _data,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Rust error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final (saves, stats) = snapshot.data!;
-          return Column(
-            children: [
-              _StatsBar(stats: stats, vaultPath: widget.vaultPath),
-              const Divider(height: 1),
-              Expanded(
-                child: saves.isEmpty
-                    ? const Center(child: Text('No saves matched.'))
-                    : ListView.separated(
-                        itemCount: saves.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1),
-                        itemBuilder: (context, i) => _SaveTile(save: saves[i]),
-                      ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _StatsBar extends StatelessWidget {
-  const _StatsBar({required this.stats, required this.vaultPath});
-  final StatsView stats;
-  final String vaultPath;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodySmall;
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 16,
-            children: [
-              Text('${stats.total} saves', style: style),
-              Text('${stats.favorites} starred', style: style),
-              Text('${stats.unread} unread', style: style),
-              Text('${stats.active} active', style: style),
-              Text('${stats.changed} changed', style: style),
-              Text('${stats.dead} dead', style: style),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(vaultPath, style: style?.copyWith(color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-}
-
-class _SaveTile extends StatelessWidget {
-  const _SaveTile({required this.save});
-  final SaveView save;
-
-  /// Hardcoded here on purpose: in the real app these five become tokens on
-  /// the theme model, so every pack can restate them.
-  static const _statusColors = <String, Color>{
-    'active': Color(0xFF3BA55D),
-    'changed': Color(0xFFE0A33E),
-    'redirected': Color(0xFF4C7DF0),
-    'dead': Color(0xFFD64545),
-    'unchecked': Color(0xFF9AA0A6),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _statusColors[save.status] ?? Colors.grey,
-        ),
-      ),
-      title: Text(
-        save.title.isEmpty ? save.url : save.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        Uri.tryParse(save.url)?.host ?? save.url,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Wrap(
-        spacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (save.favorite) const Icon(Icons.star, size: 16),
-          if (!save.isRead)
-            const Icon(Icons.circle, size: 8, color: Color(0xFF4C7DF0)),
-          Text(save.status, style: Theme.of(context).textTheme.labelSmall),
-        ],
-      ),
-    );
-  }
-}

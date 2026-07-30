@@ -197,3 +197,17 @@ pub fn map_data() -> Result<MapData, String> {
             .map(|l| l.describe()),
     })
 }
+
+// ---- preferences ----
+//
+// Host-defined keys in the vault's `meta` table. Core attaches no meaning to
+// any of them, which is what lets the theme engine store its selection beside
+// the user's data instead of in platform preferences.
+
+pub fn get_pref(key: String) -> Result<Option<String>, String> {
+    vault()?.get_meta(&key).map_err(|e| e.to_string())
+}
+
+pub fn set_pref(key: String, value: String) -> Result<(), String> {
+    vault()?.set_meta(&key, &value).map_err(|e| e.to_string())
+}

@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_rust_bridge: 2.12.0
   path_provider: ^2.1.6
+  flutter_theme_engine:
+    path: /Users/venugopal/Developer/flutter_theme_engine
 
 dev_dependencies:
   flutter_test:

@@ -32,6 +32,12 @@ Future<String> assetsDir() => RustLib.instance.api.crateApiVaultApiAssetsDir();
 /// Everything the map view needs, in one call.
 Future<MapData> mapData() => RustLib.instance.api.crateApiVaultApiMapData();
 
+Future<String?> getPref({required String key}) =>
+    RustLib.instance.api.crateApiVaultApiGetPref(key: key);
+
+Future<void> setPref({required String key, required String value}) =>
+    RustLib.instance.api.crateApiVaultApiSetPref(key: key, value: value);
+
 class MapData {
   final List<MapPoint> points;
 
