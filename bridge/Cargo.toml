@@ -1,0 +1,18 @@
+[package]
+name = "websave-bridge"
+version = "1.1.0"
+edition = "2021"
+description = "flutter_rust_bridge surface over websave-core, for the Flutter app."
+
+[lints.rust]
+# flutter_rust_bridge_codegen sets this when it expands the crate to read
+# the API; it is never set during a real build.
+unexpected_cfgs = { level = "allow", check-cfg = ["cfg(frb_expand)"] }
+
+[lib]
+# cdylib for desktop/Android, staticlib for iOS.
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+websave-core = { path = "../core" }
+flutter_rust_bridge = "=2.12.0"

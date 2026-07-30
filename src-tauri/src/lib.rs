@@ -1,5 +1,5 @@
+mod capture;
 mod commands;
-mod server;
 mod tray;
 
 use std::sync::mpsc;
@@ -120,7 +120,7 @@ pub fn run() {
                 });
             }
 
-            server::spawn(app.handle().clone(), vault.clone());
+            capture::spawn(app.handle().clone(), vault.clone());
 
             let (wake_tx, wake_rx) = mpsc::channel();
             app.manage(MonitorWaker(Mutex::new(wake_tx)));

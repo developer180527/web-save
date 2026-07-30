@@ -37,3 +37,10 @@ web-ext-artifacts
 *.sw?
 ios-app/dist
 ios-app/Generated
+
+# Flutter app (Phase 0 probe)
+/app/build
+/app/.dart_tool
+/app/.flutter-plugins-dependencies
+/app/macos/Flutter/ephemeral
+/app/macos/Pods

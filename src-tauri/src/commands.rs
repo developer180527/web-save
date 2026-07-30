@@ -465,7 +465,7 @@ pub fn open_vault_dir(app: AppHandle, vault: VaultState) -> Result<(), String> {
 
 #[tauri::command]
 pub fn capture_endpoint() -> String {
-    format!("http://{}", crate::server::CAPTURE_ADDR)
+    format!("http://{}", websave_core::CAPTURE_ADDR)
 }
 
 #[derive(serde::Serialize)]

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "ffi", "src-tauri"]
+members = ["bridge", "core", "ffi", "src-tauri"]
 
 [profile.release]
 codegen-units = 1

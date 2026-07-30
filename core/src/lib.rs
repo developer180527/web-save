@@ -25,6 +25,7 @@
 //! # Ok::<(), websave_core::Error>(())
 //! ```
 
+pub mod capture_server;
 pub mod error;
 pub mod export;
 mod extract;
@@ -35,6 +36,7 @@ pub mod probe;
 pub mod schedule;
 mod vault;
 
+pub use capture_server::{CaptureConfig, CaptureEvent, CaptureServer, CAPTURE_ADDR};
 pub use error::{Error, Result};
 pub use import::{ImportFormat, ImportItem, ImportReport};
 pub use models::{
