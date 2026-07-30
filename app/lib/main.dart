@@ -10,6 +10,7 @@
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     show ExternalLibrary;
@@ -20,28 +21,47 @@ import 'platform/desktop_window.dart';
 import 'src/rust/api/vault_api.dart';
 import 'src/rust/frb_generated.dart';
 
-/// Where the Tauri app keeps its vault, so both frontends see one dataset.
-/// SQLite is in WAL mode, so having both open at once is fine — the macOS
-/// menubar app already relies on that.
-Future<String> tauriVaultPath() async {
-  // Lets the probe be pointed at a scratch copy of the vault.
+/// Where this app's vault lives.
+///
+/// On desktop it prefers the Tauri app's vault so both frontends see one
+/// dataset during the migration — SQLite is in WAL mode, and the macOS
+/// menubar app already relies on that. On iOS there is no such vault and no
+/// shared filesystem, so it gets its own inside the app container.
+Future<String> vaultPath() async {
   const override = String.fromEnvironment('WEBSAVE_VAULT');
   if (override.isNotEmpty) return override;
   final support = await getApplicationSupportDirectory();
-  final tauriDir = Directory(
-    '${support.parent.path}/com.venugopal.web-save/vault',
-  );
-  if (tauriDir.existsSync()) return tauriDir.path;
-  // Fall back to our own sandbox so a fresh machine still runs.
+  if (!kIsWeb && !Platform.isIOS && !Platform.isAndroid) {
+    final tauriDir = Directory(
+      '${support.parent.path}/com.venugopal.web-save/vault',
+    );
+    if (tauriDir.existsSync()) return tauriDir.path;
+  }
   return '${support.path}/vault';
 }
 
-/// Locate the dev build of the Rust library.
+/// How to reach the Rust symbols on this platform.
 ///
-/// `Directory.current` is the repo when run via `flutter run`, but `/` when
-/// the built .app is launched from Finder — so try both, and let
-/// `--dart-define=WEBSAVE_DYLIB=…` override. Once cargokit bundles the
-/// library into the app (Phase 4) this whole function goes away.
+/// On iOS and Android the library is linked *into* the app binary — there is
+/// no file to open, and its symbols are already in the running process. Only
+/// desktop dev builds load a dylib from disk, and only because the library is
+/// not bundled there yet.
+ExternalLibrary rustLibrary() {
+  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+    return ExternalLibrary.process(iKnowHowToUseIt: true);
+  }
+  final path = findRustLibrary();
+  if (path == null) {
+    throw StateError(
+      'Could not find libwebsave_bridge.dylib.\n'
+      'Run `cargo build -p websave-bridge` from the repo root, or pass\n'
+      '--dart-define=WEBSAVE_DYLIB=/absolute/path/to/libwebsave_bridge.dylib',
+    );
+  }
+  return ExternalLibrary.open(path);
+}
+
+/// Locate the desktop dev build of the Rust library.
 String? findRustLibrary() {
   const override = String.fromEnvironment('WEBSAVE_DYLIB');
   const name = 'libwebsave_bridge.dylib';
@@ -63,16 +83,8 @@ Future<void> main() async {
   // A probe that dies before runApp() shows a black window and tells you
   // nothing, so every failure is caught and rendered instead.
   try {
-    final libPath = findRustLibrary();
-    if (libPath == null) {
-      throw StateError(
-        'Could not find libwebsave_bridge.dylib.\n'
-        'Run `cargo build -p websave-bridge` from the repo root, or pass\n'
-        '--dart-define=WEBSAVE_DYLIB=/absolute/path/to/libwebsave_bridge.dylib',
-      );
-    }
-    await RustLib.init(externalLibrary: ExternalLibrary.open(libPath));
-    final opened = await openVault(path: await tauriVaultPath());
+    await RustLib.init(externalLibrary: rustLibrary());
+    final opened = await openVault(path: await vaultPath());
     // The engine reads its saved selection from the vault, so it can only be
     // built once the vault is open.
     final engine = await createThemeEngine();

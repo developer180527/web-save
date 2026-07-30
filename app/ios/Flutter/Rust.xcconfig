@@ -1,0 +1,24 @@
+// Links the Rust bridge into the iOS app binary.
+//
+// On iOS there is no dylib to open at runtime: the static library is linked
+// into the app itself and Dart reaches its symbols through
+// ExternalLibrary.process(). That makes two things necessary here.
+//
+// 1. The right slice. Device and simulator are different architectures and
+//    different cargo targets, so the search path is conditioned on the SDK.
+//
+// 2. -force_load. Nothing in the Swift or Objective-C code references these
+//    symbols — Dart looks them up at runtime — so the linker would otherwise
+//    drop the entire archive as dead weight and the app would launch and
+//    immediately fail to find them. This is the single most common way an
+//    FFI iOS build goes wrong.
+//
+// The system libraries are the ones core's dependencies pull in: libc++ and
+// SQLite from rusqlite, resolv for DNS, Security and SystemConfiguration for
+// rustls' platform verifier. Same set as ios-app/build.sh already uses.
+
+RUST_LIB_DIR[sdk=iphoneos*] = $(SRCROOT)/../../target/aarch64-apple-ios/release
+RUST_LIB_DIR[sdk=iphonesimulator*] = $(SRCROOT)/../../target/aarch64-apple-ios-sim/release
+
+LIBRARY_SEARCH_PATHS = $(inherited) $(RUST_LIB_DIR)
+OTHER_LDFLAGS = $(inherited) -force_load $(RUST_LIB_DIR)/libwebsave_bridge.a -lc++ -lresolv -framework Security -framework SystemConfiguration

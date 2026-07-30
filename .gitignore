@@ -44,3 +44,6 @@ ios-app/Generated
 /app/.flutter-plugins-dependencies
 /app/macos/Flutter/ephemeral
 /app/macos/Pods
+
+# Miscellaneous
+commit.txt
