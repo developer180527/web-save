@@ -36,8 +36,14 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_rust_bridge: 2.12.0
   path_provider: ^2.1.6
+  # Consumed from git rather than a local path: this app is the package's
+  # production integration test, so it should build the way any other
+  # consumer's would. Switch to a path dep when iterating on both at once.
   flutter_theme_engine:
-    path: /Users/venugopal/Developer/flutter_theme_engine
+    git:
+      url: https://github.com/developer180527/flutter_theme_engine.git
+      ref: 19b880e
+  window_manager: ^0.5.2
 
 dev_dependencies:
   flutter_test:

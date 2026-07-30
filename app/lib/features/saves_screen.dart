@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../shell/layout_scope.dart';
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
+import 'save_detail.dart';
 import 'save_row.dart';
 
 class SavesScreen extends StatefulWidget {
@@ -20,7 +21,7 @@ class SavesScreen extends StatefulWidget {
 
 class _SavesScreenState extends State<SavesScreen> {
   String _query = '';
-  int? _selectedId;
+  SaveView? _selected;
   late Future<(List<SaveView>, StatsView)> _data;
 
   @override
@@ -34,6 +35,18 @@ class _SavesScreenState extends State<SavesScreen> {
       listSaves(query: _query.isEmpty ? null : _query, limit: 500),
       vaultStats(),
     ]).then((r) => (r[0] as List<SaveView>, r[1] as StatsView));
+  }
+
+  void _open(SaveView save) {
+    if (context.layout.showsDetailPane) {
+      setState(() => _selected = save);
+    } else {
+      // A selection that survives the pop would highlight a row with no pane
+      // to explain it, so the pushed route owns the save outright.
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => SaveDetailPage(save: save)),
+      );
+    }
   }
 
   @override
@@ -63,7 +76,7 @@ class _SavesScreenState extends State<SavesScreen> {
                 return const Center(child: CircularProgressIndicator());
               }
               final (saves, stats) = snapshot.data!;
-              return Column(
+              final list = Column(
                 children: [
                   _StatsStrip(stats: stats),
                   Expanded(
@@ -82,10 +95,28 @@ class _SavesScreenState extends State<SavesScreen> {
                             itemCount: saves.length,
                             itemBuilder: (context, i) => SaveRow(
                               save: saves[i],
-                              selected: saves[i].id == _selectedId,
-                              onTap: () =>
-                                  setState(() => _selectedId = saves[i].id),
+                              selected: saves[i].id == _selected?.id,
+                              onTap: () => _open(saves[i]),
                             ),
+                          ),
+                  ),
+                ],
+              );
+
+              // The one place the pane/route decision is made. Everything
+              // below here is the same widget either way.
+              if (!context.layout.showsDetailPane) return list;
+              return Row(
+                children: [
+                  Expanded(flex: 5, child: list),
+                  Container(width: 1, color: ws.border),
+                  Expanded(
+                    flex: 4,
+                    child: _selected == null
+                        ? _EmptyPane()
+                        : SaveDetail(
+                            save: _selected!,
+                            onClose: () => setState(() => _selected = null),
                           ),
                   ),
                 ],
@@ -191,6 +222,26 @@ class _StatsStrip extends StatelessWidget {
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyPane extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.article_outlined, size: 34, color: ws.border),
+          const SizedBox(height: 10),
+          Text(
+            'Select a save',
+            style: TextStyle(color: ws.textDim, fontSize: 13),
+          ),
         ],
       ),
     );

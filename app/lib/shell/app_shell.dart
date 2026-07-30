@@ -10,6 +10,7 @@ import 'desktop_shell.dart';
 import 'layout_scope.dart';
 import 'mobile_shell.dart';
 import 'tablet_shell.dart';
+import 'title_bar.dart';
 
 /// A destination in the app's primary navigation.
 @immutable
@@ -47,16 +48,20 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final touch = switch (Theme.of(context).platform) {
+          TargetPlatform.iOS || TargetPlatform.android => true,
+          _ => false,
+        };
         final info = LayoutInfo(
           width: constraints.maxWidth,
-          size: LayoutInfo.sizeFor(constraints.maxWidth),
-          // Hover exists when a precise pointer might; the platform is a
-          // proxy here, and the trigger in theme/ makes the same call for
-          // density. Both are conservative: assume touch on mobile.
-          hasPrecisedPointer: switch (Theme.of(context).platform) {
-            TargetPlatform.iOS || TargetPlatform.android => false,
-            _ => true,
-          },
+          // Floored on desktop so a narrowed window never reaches the bottom
+          // bar — see the note in layout_scope.dart.
+          size: LayoutInfo.sizeFor(constraints.maxWidth, touch: touch),
+          isTouchPlatform: touch,
+          // Hover exists when a precise pointer might. Conservative: assume
+          // fingers on a touch platform even though an iPad may have a
+          // trackpad, because a missing affordance is worse than a spare one.
+          hasPrecisedPointer: !touch,
         );
 
         final shell = switch (info.size) {
@@ -79,7 +84,14 @@ class _AppShellState extends State<AppShell> {
           ),
         };
 
-        return LayoutScope(info: info, child: shell);
+        // The title bar sits above every shell and renders nothing where
+        // there is no window chrome to replace.
+        return LayoutScope(
+          info: info,
+          child: Column(
+            children: [const AppTitleBar(), Expanded(child: shell)],
+          ),
+        );
       },
     );
   }

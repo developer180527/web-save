@@ -16,6 +16,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:path_provider/path_provider.dart';
 
 import 'app.dart';
+import 'platform/desktop_window.dart';
 import 'src/rust/api/vault_api.dart';
 import 'src/rust/frb_generated.dart';
 
@@ -57,6 +58,7 @@ String? findRustLibrary() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await setUpDesktopWindow();
 
   // A probe that dies before runApp() shows a black window and tells you
   // nothing, so every failure is caught and rendered instead.

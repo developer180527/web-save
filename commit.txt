@@ -1,30 +1,27 @@
-Port the React themes and stand up the three shells
+Add the detail pane, a custom title bar, and a platform floor for shells
 
-The first real UI step of the Flutter migration: WebSave's design
-vocabulary as a flutter_theme_engine ThemeModel, and the layout scaffold
-the feature screens will hang off.
+Three things, all about the desktop feeling like a desktop.
 
-WebSaveTheme carries the tokens Material has no word for -- the five
-link-health colours, hover/pressed/selected surfaces, and the metrics
-(row height, icon tile, hit target) -- and projects the rest onto
-ThemeData. Every colour in the two packs is lifted verbatim from the CSS
-custom properties in src/App.css, with the variable named beside it, so
-any visual difference from the React app is now a bug rather than taste.
-ColorScheme is built explicitly rather than seeded, which would have let
-Material re-derive surfaces and shift the palette.
+The shell rule was too absolute. "Layout follows width, never platform"
+conflated how much room there is with which idioms are available: a
+bottom tab bar is a thumb idiom, so a narrowed desktop window was getting
+a phone's navigation. Shell selection is now min(what the width affords,
+what the platform offers) -- desktop floors at the icon rail, touch
+platforms keep all three. That is what keeps the iPad right, where one
+device legitimately produces all three answers depending on its window.
 
-Layout is kept strictly apart from theme. LayoutScope picks desktop,
-tablet or mobile from window width alone -- a narrow Mac window gets the
-compact layout, and an iPad with a trackpad is not treated as a phone.
-The two meet only at PointerDensityTrigger, which swaps a pack for its
-generated _touch variant when the pointer is coarse; no widget branches
-on Platform.
+The title bar is drawn by the app on desktop and absent everywhere else,
+keyed off platform rather than width so an iPad at desktop width still
+gets none. It mirrors the Tauri chrome: macOS keeps its native traffic
+lights and reserves their footprint, Windows and Linux go frameless and
+draw their own controls, and close hides rather than quits so capture and
+monitoring keep running.
 
-VaultThemeStore persists the selection in the vault's meta table rather
-than platform preferences, so the choice travels with the user's data --
-the same vault opened on another device comes up in the same theme.
+SaveDetail serves both the desktop pane and the pushed route, with the
+pane/route decision made in one place in the list. The status badge tints
+the health colour rather than using it flat, so a dead link reads as
+information rather than an alarm.
 
-SaveRow applies the hover audit the CSS forced: information is always
-visible, actions are hover-revealed only where a pointer exists and
-long-press elsewhere. That split has to be made for every remaining
-screen as it comes across.
+flutter_theme_engine moves from a path dependency to git, pinned -- this
+app is the package's integration test, so it should consume it the way
+any other app would.
