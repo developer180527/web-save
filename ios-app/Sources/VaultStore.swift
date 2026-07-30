@@ -74,14 +74,18 @@ final class VaultStore: ObservableObject {
         reload()
     }
 
-    /// Check links not seen in the last day — network work happens off the
-    /// main actor so the UI never blocks.
+    /// Check whichever links the core's schedule says are due — network work
+    /// happens off the main actor so the UI never blocks.
+    ///
+    /// Bounded by both a count and 20 seconds of wall time: the app may be
+    /// backgrounded at any moment, and anything the sweep doesn't reach
+    /// simply stays due for next launch.
     func sweepHealth() async {
         guard let vault, !checking else { return }
         checking = true
         defer { checking = false }
         let checked = await Task.detached(priority: .utility) {
-            (try? vault.checkDue(maxAgeSecs: 24 * 60 * 60, limit: 40)) ?? 0
+            (try? vault.checkDue(limit: 40, budgetSecs: 20)) ?? 0
         }.value
         if checked > 0 { reload() }
     }

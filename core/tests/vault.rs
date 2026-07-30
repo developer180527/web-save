@@ -1,4 +1,4 @@
-use websave_core::{Error, LinkStatus, ListQuery, NewSave, SavePatch, Vault};
+use websave_core::{schedule, Error, LinkStatus, ListQuery, NewSave, SavePatch, Vault};
 
 fn vault() -> (tempfile::TempDir, Vault) {
     let dir = tempfile::tempdir().unwrap();
@@ -200,6 +200,7 @@ fn filters_favorites_tags_and_status() {
                 content_hash: None,
                 og_image: None,
                 archive_text: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -216,14 +217,20 @@ fn filters_favorites_tags_and_status() {
     assert_eq!((stats.total, stats.favorites, stats.dead), (3, 1, 1));
 }
 
+/// A checked save leaves the due set until its scheduled time comes round,
+/// which is what stops a large vault from re-checking everything every day.
 #[test]
-fn due_for_check_orders_by_staleness_and_respects_age() {
+fn checking_a_save_takes_it_out_of_the_due_set() {
     let (_dir, vault) = vault();
     let a = save(&vault, "https://a.example", "A", &[]);
     let b = save(&vault, "https://b.example", "B", &[]);
 
-    let due = vault.saves_due_for_check(3600, 10).unwrap();
-    assert_eq!(due.len(), 2, "never-checked saves are due");
+    assert_eq!(
+        vault.saves_due_for_check(10, 0).unwrap().len(),
+        2,
+        "never-checked saves are due immediately"
+    );
+    assert_eq!(vault.count_due_for_check().unwrap(), 2);
 
     vault
         .apply_check(
@@ -233,17 +240,184 @@ fn due_for_check_orders_by_staleness_and_respects_age() {
                 http_status: Some(200),
                 redirect_url: Some(String::new()),
                 content_hash: Some("abc".into()),
-                og_image: None,
-                archive_text: None,
+                etag: Some("W/\"v1\"".into()),
+                ..Default::default()
             },
         )
         .unwrap();
-    let due = vault.saves_due_for_check(3600, 10).unwrap();
+
+    let due = vault.saves_due_for_check(10, 0).unwrap();
     assert_eq!(due.iter().map(|t| t.id).collect::<Vec<_>>(), vec![b.id]);
-    // max_age 0 means everything is due again; freshly checked goes last.
-    let due = vault.saves_due_for_check(-1, 10).unwrap();
-    assert_eq!(due.last().unwrap().id, a.id);
-    assert_eq!(due.last().unwrap().content_hash, "abc");
+    assert_eq!(vault.count_due_for_check().unwrap(), 1);
+
+    // A forced sweep ignores the schedule and still sees everything, with
+    // the state a conditional request needs.
+    let all = vault.all_check_targets(0, 10).unwrap();
+    assert_eq!(
+        all.iter().map(|t| t.id).collect::<Vec<_>>(),
+        vec![a.id, b.id]
+    );
+    assert_eq!(all[0].content_hash, "abc");
+    assert_eq!(all[0].etag, "W/\"v1\"");
+}
+
+/// The backoff curve, observed through the vault rather than the policy: a
+/// save that keeps coming back unchanged is scheduled further and further
+/// out, and a change drops it straight back to the floor.
+#[test]
+fn repeated_clean_checks_widen_the_interval_and_a_change_resets_it() {
+    let (_dir, vault) = vault();
+    let s = save(&vault, "https://stable.example", "Stable", &[]);
+    // Read and unstarred, so it is allowed past the hot ceiling.
+    vault.set_read(s.id, true).unwrap();
+
+    let check = |status: LinkStatus, hash: &str| {
+        vault
+            .apply_check(
+                s.id,
+                &websave_core::CheckOutcome {
+                    status,
+                    http_status: Some(200),
+                    content_hash: Some(hash.into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        vault.check_interval_secs(s.id).unwrap()
+    };
+
+    assert_eq!(check(LinkStatus::Active, "h1"), 12 * 3600);
+    assert_eq!(check(LinkStatus::Active, "h1"), 24 * 3600);
+    assert_eq!(check(LinkStatus::Active, "h1"), 2 * 86_400);
+
+    assert_eq!(
+        check(LinkStatus::Changed, "h2"),
+        schedule::MIN_INTERVAL_SECS,
+        "a changed page must go back to the floor"
+    );
+}
+
+/// Starred and unread saves are the ones where a stale status is noticed, so
+/// they never back off as far as the rest of the vault.
+#[test]
+fn engaged_saves_keep_a_tighter_schedule() {
+    let (_dir, vault) = vault();
+    let hot = save(&vault, "https://hot.example", "Hot", &[]);
+    let cold = save(&vault, "https://cold.example", "Cold", &[]);
+    vault.set_favorite(hot.id, true).unwrap();
+    vault.set_read(hot.id, true).unwrap();
+    vault.set_read(cold.id, true).unwrap();
+
+    for _ in 0..12 {
+        for id in [hot.id, cold.id] {
+            vault
+                .apply_check(
+                    id,
+                    &websave_core::CheckOutcome {
+                        status: LinkStatus::Active,
+                        http_status: Some(200),
+                        content_hash: Some("same".into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+        }
+    }
+
+    assert_eq!(
+        vault.check_interval_secs(hot.id).unwrap(),
+        schedule::HOT_MAX_INTERVAL_SECS
+    );
+    assert_eq!(
+        vault.check_interval_secs(cold.id).unwrap(),
+        schedule::MAX_INTERVAL_SECS
+    );
+}
+
+/// A 304 leaves every content field alone. The archive, hash and thumbnail
+/// have to survive a revalidation, or the cheap path would quietly destroy
+/// the data the expensive path collected.
+#[test]
+fn a_not_modified_check_preserves_stored_content() {
+    let (_dir, vault) = vault();
+    let s = save(&vault, "https://cached.example", "Cached", &[]);
+
+    vault
+        .apply_check(
+            s.id,
+            &websave_core::CheckOutcome {
+                status: LinkStatus::Active,
+                http_status: Some(200),
+                content_hash: Some("original".into()),
+                archive_text: Some("The original prose of the page.".into()),
+                etag: Some("\"abc\"".into()),
+                last_modified: Some("Wed, 21 Oct 2015 07:28:00 GMT".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    vault
+        .apply_check(
+            s.id,
+            &websave_core::CheckOutcome {
+                status: LinkStatus::Active,
+                http_status: Some(304),
+                not_modified: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let target = vault.check_target(s.id).unwrap();
+    assert_eq!(target.content_hash, "original");
+    assert_eq!(target.etag, "\"abc\"");
+    assert_eq!(target.last_modified, "Wed, 21 Oct 2015 07:28:00 GMT");
+    assert_eq!(
+        vault.archive_text(s.id).unwrap().as_deref(),
+        Some("The original prose of the page.")
+    );
+    assert_eq!(vault.get_save(s.id).unwrap().status, LinkStatus::Active);
+}
+
+/// Pointing a save at a new URL invalidates everything the schedule and the
+/// validators knew about the old one.
+#[test]
+fn changing_the_url_resets_the_schedule_and_validators() {
+    let (_dir, vault) = vault();
+    let s = save(&vault, "https://old.example", "Old", &[]);
+    vault.set_read(s.id, true).unwrap();
+    for _ in 0..4 {
+        vault
+            .apply_check(
+                s.id,
+                &websave_core::CheckOutcome {
+                    status: LinkStatus::Active,
+                    http_status: Some(200),
+                    content_hash: Some("same".into()),
+                    etag: Some("\"old\"".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    assert!(vault.check_interval_secs(s.id).unwrap() > schedule::MIN_INTERVAL_SECS);
+    assert_eq!(vault.count_due_for_check().unwrap(), 0);
+
+    vault.set_url(s.id, "https://new.example").unwrap();
+
+    let target = vault.check_target(s.id).unwrap();
+    assert_eq!(target.etag, "", "old validator would revalidate a new page");
+    assert_eq!(target.content_hash, "");
+    assert_eq!(
+        vault.check_interval_secs(s.id).unwrap(),
+        schedule::DEFAULT_INTERVAL_SECS
+    );
+    assert_eq!(
+        vault.count_due_for_check().unwrap(),
+        1,
+        "the new URL should be checked promptly"
+    );
 }
 
 #[test]
@@ -288,6 +462,7 @@ fn archive_snapshot_is_stored_and_searchable() {
                 archive_text: Some(
                     "SQLite write-ahead logging lets readers and writers coexist".into(),
                 ),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -321,6 +496,7 @@ fn archive_snapshot_is_stored_and_searchable() {
                 content_hash: Some("h2".into()),
                 og_image: None,
                 archive_text: Some("   ".into()),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -489,6 +665,7 @@ fn dead_since_is_stamped_on_death_and_cleared_on_recovery() {
         content_hash: None,
         og_image: None,
         archive_text: None,
+        ..Default::default()
     };
 
     vault.apply_check(s.id, &outcome(LinkStatus::Dead)).unwrap();
@@ -520,6 +697,7 @@ fn purge_only_removes_links_dead_past_the_grace_period() {
         content_hash: None,
         og_image: None,
         archive_text: None,
+        ..Default::default()
     };
     vault
         .apply_check(old.id, &outcome(LinkStatus::Dead))

@@ -506,11 +506,19 @@ public protocol VaultHandleProtocol : AnyObject {
     
     /**
      * A foreground health-check sweep: iOS can't run a background daemon, so
-     * the app checks stale links while it's open. Checks up to `limit` links
-     * that haven't been verified within `max_age_secs`, blocking on the
-     * network — call it off the main actor. Returns how many were checked.
+     * the app checks due links while it's open.
+     *
+     * Which links are due is `websave_core::schedule`'s decision, the same
+     * one the desktop daemon uses — this runs the shared
+     * [`websave_core::Monitor`] rather than its own loop, so the two hosts
+     * can't drift apart.
+     *
+     * Bounded by `limit` checks and `budget_secs` of wall time, because the
+     * foreground window may be a few seconds long; whatever it doesn't
+     * reach stays due for the next launch. Blocks on the network — call it
+     * off the main actor. Returns how many were checked.
      */
-    func checkDue(maxAgeSecs: Int64, limit: Int64) throws  -> UInt32
+    func checkDue(limit: Int64, budgetSecs: UInt32) throws  -> UInt32
     
     func delete(id: Int64) throws 
     
@@ -600,15 +608,23 @@ open func add(url: String, title: String)throws  -> SaveSummary {
     
     /**
      * A foreground health-check sweep: iOS can't run a background daemon, so
-     * the app checks stale links while it's open. Checks up to `limit` links
-     * that haven't been verified within `max_age_secs`, blocking on the
-     * network — call it off the main actor. Returns how many were checked.
+     * the app checks due links while it's open.
+     *
+     * Which links are due is `websave_core::schedule`'s decision, the same
+     * one the desktop daemon uses — this runs the shared
+     * [`websave_core::Monitor`] rather than its own loop, so the two hosts
+     * can't drift apart.
+     *
+     * Bounded by `limit` checks and `budget_secs` of wall time, because the
+     * foreground window may be a few seconds long; whatever it doesn't
+     * reach stays due for the next launch. Blocks on the network — call it
+     * off the main actor. Returns how many were checked.
      */
-open func checkDue(maxAgeSecs: Int64, limit: Int64)throws  -> UInt32 {
+open func checkDue(limit: Int64, budgetSecs: UInt32)throws  -> UInt32 {
     return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeVaultError.lift) {
     uniffi_websave_ffi_fn_method_vaulthandle_check_due(self.uniffiClonePointer(),
-        FfiConverterInt64.lower(maxAgeSecs),
-        FfiConverterInt64.lower(limit),$0
+        FfiConverterInt64.lower(limit),
+        FfiConverterUInt32.lower(budgetSecs),$0
     )
 })
 }
@@ -955,7 +971,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_websave_ffi_checksum_method_vaulthandle_add() != 59682) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_websave_ffi_checksum_method_vaulthandle_check_due() != 5024) {
+    if (uniffi_websave_ffi_checksum_method_vaulthandle_check_due() != 11792) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_websave_ffi_checksum_method_vaulthandle_delete() != 9915) {

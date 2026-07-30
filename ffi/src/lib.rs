@@ -56,7 +56,9 @@ fn summarize(s: websave_core::Save) -> SaveSummary {
 
 #[derive(uniffi::Object)]
 pub struct VaultHandle {
-    inner: Vault,
+    /// `Arc` because [`websave_core::Monitor`] takes shared ownership of the
+    /// vault for the duration of a sweep.
+    inner: Arc<Vault>,
 }
 
 #[uniffi::export]
@@ -65,7 +67,7 @@ impl VaultHandle {
     #[uniffi::constructor]
     pub fn new(path: String) -> Result<Arc<Self>, VaultError> {
         Ok(Arc::new(VaultHandle {
-            inner: Vault::open(path)?,
+            inner: Arc::new(Vault::open(path)?),
         }))
     }
 
@@ -117,18 +119,29 @@ impl VaultHandle {
     }
 
     /// A foreground health-check sweep: iOS can't run a background daemon, so
-    /// the app checks stale links while it's open. Checks up to `limit` links
-    /// that haven't been verified within `max_age_secs`, blocking on the
-    /// network — call it off the main actor. Returns how many were checked.
-    pub fn check_due(&self, max_age_secs: i64, limit: i64) -> Result<u32, VaultError> {
-        let targets = self.inner.saves_due_for_check(max_age_secs, limit)?;
-        let count = targets.len() as u32;
-        for t in &targets {
-            let outcome = websave_core::check_url(&t.url, &t.content_hash, t.hash_algo);
-            self.inner.apply_check(t.id, &outcome)?;
-            self.inner
-                .maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
-        }
-        Ok(count)
+    /// the app checks due links while it's open.
+    ///
+    /// Which links are due is `websave_core::schedule`'s decision, the same
+    /// one the desktop daemon uses — this runs the shared
+    /// [`websave_core::Monitor`] rather than its own loop, so the two hosts
+    /// can't drift apart.
+    ///
+    /// Bounded by `limit` checks and `budget_secs` of wall time, because the
+    /// foreground window may be a few seconds long; whatever it doesn't
+    /// reach stays due for the next launch. Blocks on the network — call it
+    /// off the main actor. Returns how many were checked.
+    pub fn check_due(&self, limit: i64, budget_secs: u32) -> Result<u32, VaultError> {
+        let config = websave_core::MonitorConfig {
+            max_per_sweep: (limit > 0).then_some(limit as usize),
+            time_budget: (budget_secs > 0)
+                .then(|| std::time::Duration::from_secs(budget_secs as u64)),
+            // Half the desktop's concurrency: a phone is likelier to be on a
+            // metered connection and on battery, and the sweep is bounded by
+            // time anyway.
+            max_concurrency: 8,
+            ..Default::default()
+        };
+        let monitor = websave_core::Monitor::new(self.inner.clone(), config);
+        Ok(monitor.run_due().checked as u32)
     }
 }

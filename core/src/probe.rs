@@ -29,17 +29,46 @@ const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
 pub const HASH_ALGO: u32 = 1;
 
 /// The minimal data needed to check one save without holding the vault lock.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CheckTarget {
     pub id: i64,
     pub url: String,
     pub content_hash: String,
     /// [`HASH_ALGO`] version `content_hash` was computed under.
     pub hash_algo: u32,
+    /// `ETag` from the last successful fetch, for `If-None-Match`.
+    pub etag: String,
+    /// `Last-Modified` from the last successful fetch, for `If-Modified-Since`.
+    pub last_modified: String,
+}
+
+impl CheckTarget {
+    /// A bare target with no prior state: forces a full fetch and baselines.
+    pub fn new(url: impl Into<String>) -> CheckTarget {
+        CheckTarget {
+            url: url.into(),
+            hash_algo: HASH_ALGO,
+            ..Default::default()
+        }
+    }
+
+    /// Whether this check may ask the server "has it changed?" instead of
+    /// downloading the page.
+    ///
+    /// A 304 only tells us the *response* is unchanged, so it is only a
+    /// usable answer when the stored hash is one we could have compared
+    /// against anyway: present, and computed under the current
+    /// [`HASH_ALGO`]. A stale basis has to re-baseline, and re-baselining
+    /// needs a body.
+    fn may_revalidate(&self) -> bool {
+        self.hash_algo == HASH_ALGO
+            && !self.content_hash.is_empty()
+            && !(self.etag.is_empty() && self.last_modified.is_empty())
+    }
 }
 
 /// Result of probing a URL. `None` fields mean "leave the stored value alone".
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckOutcome {
     pub status: LinkStatus,
@@ -50,59 +79,136 @@ pub struct CheckOutcome {
     pub og_image: Option<String>,
     /// Readable text extracted from the page, for the archive snapshot.
     pub archive_text: Option<String>,
+    /// `ETag` the server just gave us. `Some("")` clears a stored one.
+    pub etag: Option<String>,
+    /// `Last-Modified` the server just gave us. `Some("")` clears a stored one.
+    pub last_modified: Option<String>,
+    /// The server answered 304: nothing was downloaded, and every content
+    /// field above is deliberately `None`.
+    pub not_modified: bool,
 }
 
-/// Probe a URL and classify it.
+impl CheckOutcome {
+    /// Whether the request never reached a server at all — DNS failure,
+    /// connection refused, TLS failure, timeout.
+    ///
+    /// The distinction matters for the host circuit breaker: a 404 is a
+    /// perfectly healthy server telling us about one page, and says nothing
+    /// about the next link on that host. A transport failure is the host
+    /// itself being unreachable, which is very likely to repeat.
+    pub fn is_transport_failure(&self) -> bool {
+        self.status == LinkStatus::Dead && self.http_status.is_none()
+    }
+}
+
+/// A reusable HTTP client for link checking.
+///
+/// Worth holding onto rather than building per request: the agent owns a
+/// connection pool, so repeated checks against the same host reuse the TLS
+/// session instead of paying a fresh handshake every time. A vault of 10k
+/// saves concentrated across a few hundred hosts is exactly the shape that
+/// benefits.
+///
+/// Cheap to clone (the agent is internally reference-counted) and safe to
+/// share across threads.
+#[derive(Clone)]
+pub struct Prober {
+    agent: ureq::Agent,
+}
+
+impl Default for Prober {
+    fn default() -> Prober {
+        Prober::new()
+    }
+}
+
+impl Prober {
+    pub fn new() -> Prober {
+        Prober {
+            agent: ureq::AgentBuilder::new()
+                .timeout(TIMEOUT)
+                .redirects(8)
+                .user_agent(USER_AGENT)
+                .build(),
+        }
+    }
+
+    /// Probe a saved link and classify it. See [`check`].
+    pub fn check(&self, target: &CheckTarget) -> CheckOutcome {
+        let url = target.url.as_str();
+        log::debug!("checking {url}");
+        let previous_hash = if target.hash_algo == HASH_ALGO {
+            target.content_hash.as_str()
+        } else {
+            if !target.content_hash.is_empty() {
+                log::debug!(
+                    "{url}: hash algo {} → {HASH_ALGO}, re-baselining",
+                    target.hash_algo
+                );
+            }
+            ""
+        };
+
+        let validators = target.may_revalidate().then_some(target);
+        let first = probe(&self.agent, url, previous_hash, validators, None);
+        // A dead verdict from an HTTP status (not a transport failure) may
+        // just be bot filtering — confirm with a browser identity before
+        // believing it.
+        if first.status == LinkStatus::Dead && first.http_status.is_some() {
+            log::debug!(
+                "{url} looked dead (http {:?}), retrying as browser",
+                first.http_status
+            );
+            // Retry unconditionally: a validated request could come back 304
+            // and tell us nothing about whether the browser identity was let
+            // through.
+            let second = probe(&self.agent, url, previous_hash, None, Some(BROWSER_UA));
+            if second.status != LinkStatus::Dead {
+                return second;
+            }
+        }
+        first
+    }
+}
+
+/// Probe a URL with no prior state: always fetches, always baselines.
+///
+/// This performs a blocking network call; run it off the UI thread.
+pub fn check_url(url: &str) -> CheckOutcome {
+    check(&CheckTarget::new(url))
+}
+
+/// Probe a saved link and classify it.
 ///
 /// - `redirected`: the request ended at a meaningfully different location
 ///   (http→https upgrades and `www.` changes are treated as the same place).
-/// - `changed`: reachable, but the content hash differs from `previous_hash`.
+/// - `changed`: reachable, but the content hash differs from the stored one.
 /// - `dead`: transport/DNS failure, 404/410, other client errors, or 5xx.
 ///   401/403/405/406/429 count as `active` — the page exists, it just
 ///   doesn't want to talk to a bot.
 ///
-/// `previous_algo` is the [`HASH_ALGO`] version `previous_hash` was computed
-/// under. A stale version means the two hashes aren't comparable: the check
-/// re-baselines (reports `active`, stores the fresh hash) rather than
-/// reporting a change it can't actually see.
+/// When the target carries usable validators (see
+/// [`CheckTarget::may_revalidate`]) this sends `If-None-Match` /
+/// `If-Modified-Since`, and a 304 settles the check without downloading,
+/// extracting or hashing anything.
 ///
-/// This performs a blocking network call; run it off the UI thread.
-pub fn check_url(url: &str, previous_hash: &str, previous_algo: u32) -> CheckOutcome {
-    log::debug!("checking {url}");
-    let previous_hash = if previous_algo == HASH_ALGO {
-        previous_hash
-    } else {
-        if !previous_hash.is_empty() {
-            log::debug!("{url}: hash algo {previous_algo} → {HASH_ALGO}, re-baselining");
-        }
-        ""
-    };
-    let agent = ureq::AgentBuilder::new()
-        .timeout(TIMEOUT)
-        .redirects(8)
-        .user_agent(USER_AGENT)
-        .build();
-
-    let first = probe(&agent, url, previous_hash, None);
-    // A dead verdict from an HTTP status (not a transport failure) may just
-    // be bot filtering — confirm with a browser identity before believing it.
-    if first.status == LinkStatus::Dead && first.http_status.is_some() {
-        log::debug!(
-            "{url} looked dead (http {:?}), retrying as browser",
-            first.http_status
-        );
-        let second = probe(&agent, url, previous_hash, Some(BROWSER_UA));
-        if second.status != LinkStatus::Dead {
-            return second;
-        }
-    }
-    first
+/// [`CheckTarget::hash_algo`] is the [`HASH_ALGO`] version the stored hash
+/// was computed under. A stale version means the two hashes aren't
+/// comparable: the check re-baselines (reports `active`, stores the fresh
+/// hash) rather than reporting a change it can't actually see.
+///
+/// This performs a blocking network call; run it off the UI thread. Checking
+/// more than one link? Build a [`Prober`] and reuse it, so the connection
+/// pool survives between requests.
+pub fn check(target: &CheckTarget) -> CheckOutcome {
+    Prober::new().check(target)
 }
 
 fn probe(
     agent: &ureq::Agent,
     url: &str,
     previous_hash: &str,
+    validators: Option<&CheckTarget>,
     user_agent: Option<&str>,
 ) -> CheckOutcome {
     let mut request = agent
@@ -112,13 +218,40 @@ fn probe(
     if let Some(ua) = user_agent {
         request = request.set("User-Agent", ua);
     }
+    if let Some(target) = validators {
+        if !target.etag.is_empty() {
+            request = request.set("If-None-Match", &target.etag);
+        }
+        if !target.last_modified.is_empty() {
+            request = request.set("If-Modified-Since", &target.last_modified);
+        }
+    }
 
     match request.call() {
+        // 304 arrives here rather than in the error arm: ureq only errors on
+        // 4xx/5xx. It has to be handled before the 3xx redirect check below —
+        // "unchanged" is the opposite of "moved".
+        Ok(resp) if resp.status() == 304 => {
+            log::debug!("{url}: 304 not modified");
+            CheckOutcome {
+                status: LinkStatus::Active,
+                http_status: Some(304),
+                not_modified: true,
+                // A 304 carries no body, so there is nothing to hash, extract
+                // or re-derive a cover image from. Every content field stays
+                // `None` so the stored values survive untouched.
+                etag: header(&resp, "etag"),
+                last_modified: header(&resp, "last-modified"),
+                ..Default::default()
+            }
+        }
         Ok(resp) => {
             let code = resp.status();
             let final_url = resp.get_url().to_string();
             let is_html = resp.content_type().to_ascii_lowercase().contains("html");
             let redirected = !same_destination(url, &final_url);
+            let etag = header(&resp, "etag").unwrap_or_default();
+            let last_modified = header(&resp, "last-modified").unwrap_or_default();
             let mut body = Vec::new();
             let _ = resp
                 .into_reader()
@@ -148,6 +281,12 @@ fn probe(
                 content_hash: Some(hash),
                 og_image,
                 archive_text,
+                // Always written, so a server that stops sending a validator
+                // clears the stale one instead of revalidating against it
+                // forever.
+                etag: Some(etag),
+                last_modified: Some(last_modified),
+                not_modified: false,
             }
         }
         Err(ureq::Error::Status(code, resp)) => {
@@ -167,20 +306,20 @@ fn probe(
                 status,
                 http_status: Some(code),
                 redirect_url: Some(if redirected { final_url } else { String::new() }),
-                content_hash: None,
-                og_image: None,
-                archive_text: None,
+                ..Default::default()
             }
         }
         Err(_) => CheckOutcome {
             status: LinkStatus::Dead,
-            http_status: None,
-            redirect_url: None,
-            content_hash: None,
-            og_image: None,
-            archive_text: None,
+            ..Default::default()
         },
     }
+}
+
+/// A response header as an owned string, absent when unset or blank.
+fn header(resp: &ureq::Response, name: &str) -> Option<String> {
+    let value = resp.header(name)?.trim();
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 /// Pull the page's cover image URL out of its HTML head metadata:

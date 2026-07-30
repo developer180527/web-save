@@ -1,10 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Health of a saved link, maintained by the monitoring service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LinkStatus {
     /// Never checked yet.
+    #[default]
     Unchecked,
     /// Reachable and unchanged since the last check.
     Active,

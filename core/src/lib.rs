@@ -31,6 +31,8 @@ mod extract;
 pub mod import;
 pub mod models;
 pub mod monitor;
+pub mod probe;
+pub mod schedule;
 mod vault;
 
 pub use error::{Error, Result};
@@ -38,5 +40,6 @@ pub use import::{ImportFormat, ImportItem, ImportReport};
 pub use models::{
     LinkStatus, ListQuery, NewSave, Save, SavePatch, SavedSearch, TagCount, VaultStats,
 };
-pub use monitor::{check_url, CheckOutcome, CheckTarget, HASH_ALGO};
+pub use monitor::{Monitor, MonitorConfig, MonitorEvent, MonitorHandle, SweepSummary};
+pub use probe::{check_url, CheckOutcome, CheckTarget, HASH_ALGO};
 pub use vault::{Vault, ASSETS_DIR, DB_FILE, THUMBS_DIR};

@@ -3,9 +3,9 @@
 
 fn main() {
     let url = std::env::args().nth(1).expect("usage: check_url <url>");
-    let outcome = websave_core::check_url(&url, "", websave_core::HASH_ALGO);
+    let outcome = websave_core::check_url(&url);
     println!(
-        "{url}\n  status: {:?}\n  http:   {:?}\n  redirect: {:?}",
-        outcome.status, outcome.http_status, outcome.redirect_url
+        "{url}\n  status: {:?}\n  http:   {:?}\n  redirect: {:?}\n  etag: {:?}",
+        outcome.status, outcome.http_status, outcome.redirect_url, outcome.etag
     );
 }

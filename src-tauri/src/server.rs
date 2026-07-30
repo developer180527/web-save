@@ -61,7 +61,10 @@ fn handle(
     match (request.method(), request.url()) {
         (Method::Get, "/ping") => json(
             200,
-            format!(r#"{{"app":"websave","version":"{}"}}"#, env!("CARGO_PKG_VERSION")),
+            format!(
+                r#"{{"app":"websave","version":"{}"}}"#,
+                env!("CARGO_PKG_VERSION")
+            ),
         ),
         // Recent saves for the extension popup's search. Read access is
         // gated by the same custom header as /save, so ordinary web pages

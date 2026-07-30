@@ -7,14 +7,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
-use websave_core::Vault;
+use websave_core::{MonitorConfig, Vault};
 
 /// How often the background monitor wakes up on its own.
+///
+/// This is only how often we *look* for work — which saves are actually due
+/// is `websave_core::schedule`'s call, so waking often is cheap.
 const CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
-/// A link is due for a re-check once its last check is older than this.
-const CHECK_MAX_AGE_SECS: i64 = 24 * 60 * 60;
-/// Checks per batch, to keep network usage polite.
-const CHECK_BATCH: i64 = 20;
 
 /// Pokes the monitor thread so freshly added saves get their first link
 /// check within seconds instead of waiting for the next 30-minute cycle.
@@ -201,12 +200,22 @@ pub fn run() {
 /// Background link monitor. Runs whenever it is woken (new saves, imports,
 /// captures) and at least every `CHECK_INTERVAL`; notifies the UI as
 /// results land.
+///
+/// The sweep itself belongs to `websave_core::Monitor` — all this host owns
+/// is the timer and the translation of `MonitorEvent` into Tauri events.
 fn spawn_monitor(app: AppHandle, vault: Arc<Vault>, wake: mpsc::Receiver<()>) {
     std::thread::spawn(move || {
+        let monitor = commands::build_monitor(
+            app.clone(),
+            vault.clone(),
+            MonitorConfig::default(),
+            // Background sweeps stay off the re-check button's channel.
+            false,
+        );
         // Let the app finish starting before hitting the network.
         std::thread::sleep(Duration::from_secs(5));
         loop {
-            run_due_checks(&app, &vault);
+            monitor.run_due();
             purge_trash_if_enabled(&app, &vault);
             match wake.recv_timeout(CHECK_INTERVAL) {
                 // Brief debounce so a burst of adds is checked as one batch.
@@ -218,8 +227,6 @@ fn spawn_monitor(app: AppHandle, vault: Arc<Vault>, wake: mpsc::Receiver<()>) {
     });
 }
 
-/// Check everything currently due, in polite batches, emitting progress
-/// after each batch so the UI updates as statuses come in.
 /// Permanently remove links that stayed dead through the whole grace period.
 /// Opt-out via the `trash.auto_purge` preference; links that recover before
 /// the deadline clear their `dead_since` stamp and are never touched.
@@ -235,27 +242,5 @@ fn purge_trash_if_enabled(app: &AppHandle, vault: &Arc<Vault>) {
         if removed > 0 {
             let _ = app.emit("saves-updated", ());
         }
-    }
-}
-
-fn run_due_checks(app: &AppHandle, vault: &Arc<Vault>) {
-    loop {
-        let Ok(targets) = vault.saves_due_for_check(CHECK_MAX_AGE_SECS, CHECK_BATCH) else {
-            return;
-        };
-        if targets.is_empty() {
-            return;
-        }
-        log::info!("monitor: checking {} link(s)", targets.len());
-        for t in &targets {
-            let outcome = websave_core::check_url(&t.url, &t.content_hash, t.hash_algo);
-            let _ = vault.apply_check(t.id, &outcome);
-            vault.maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
-        }
-        let _ = app.emit("saves-updated", ());
-        if (targets.len() as i64) < CHECK_BATCH {
-            return;
-        }
-        std::thread::sleep(Duration::from_secs(2));
     }
 }

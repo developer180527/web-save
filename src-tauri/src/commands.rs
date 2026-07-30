@@ -1,9 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use websave_core::{
-    ListQuery, NewSave, Save, SavePatch, SavedSearch, TagCount, Vault, VaultStats,
+    ListQuery, Monitor, MonitorConfig, MonitorEvent, NewSave, Save, SavePatch, SavedSearch,
+    TagCount, Vault, VaultStats,
 };
 
 type VaultState<'a> = State<'a, Arc<Vault>>;
@@ -295,19 +297,16 @@ pub async fn preview_save(app: AppHandle, url: String, title: String) -> Result<
         return Ok(());
     }
 
-    let win = tauri::WebviewWindowBuilder::new(
-        &app,
-        "preview",
-        tauri::WebviewUrl::External(parsed),
-    )
-    .title(&window_title)
-    .inner_size(1000.0, 720.0)
-    .min_inner_size(420.0, 320.0)
-    .build()
-    .map_err(|e| {
-        log::error!("preview: failed to open window for {url}: {e}");
-        e.to_string()
-    })?;
+    let win =
+        tauri::WebviewWindowBuilder::new(&app, "preview", tauri::WebviewUrl::External(parsed))
+            .title(&window_title)
+            .inner_size(1000.0, 720.0)
+            .min_inner_size(420.0, 320.0)
+            .build()
+            .map_err(|e| {
+                log::error!("preview: failed to open window for {url}: {e}");
+                e.to_string()
+            })?;
     let _ = win.set_focus();
     log::info!("preview: opened window for {url}");
     Ok(())
@@ -338,13 +337,80 @@ struct RecheckProgress {
     finished: bool,
 }
 
+/// Shortest gap between progress events.
+///
+/// A 10k-save sweep would otherwise push 10k messages across the IPC bridge
+/// — far more than a progress label can use, and enough to compete with the
+/// checks themselves for the frontend's attention.
+const PROGRESS_THROTTLE: Duration = Duration::from_millis(120);
+
+/// Build a [`Monitor`] that reports into the Tauri event bus.
+///
+/// `progress` distinguishes the two callers: a user-initiated sweep drives
+/// the re-check button's loading state, while the background daemon must
+/// stay silent on that channel or the button would spin on its own every
+/// half hour.
+pub fn build_monitor(
+    app: AppHandle,
+    vault: Arc<Vault>,
+    config: MonitorConfig,
+    progress: bool,
+) -> Monitor {
+    let last_emit = Mutex::new(Instant::now() - PROGRESS_THROTTLE);
+    Monitor::with_sink(vault, config, move |event| match event {
+        MonitorEvent::Started { total } if progress => {
+            let _ = app.emit(
+                "recheck-progress",
+                RecheckProgress {
+                    done: 0,
+                    total,
+                    finished: false,
+                },
+            );
+        }
+        MonitorEvent::Checked { done, total, .. } if progress => {
+            let mut last = last_emit.lock().unwrap();
+            if last.elapsed() < PROGRESS_THROTTLE {
+                return;
+            }
+            *last = Instant::now();
+            let _ = app.emit(
+                "recheck-progress",
+                RecheckProgress {
+                    done,
+                    total,
+                    finished: false,
+                },
+            );
+        }
+        // One list refresh per batch rather than per link: the frontend
+        // refetches the whole list on this event.
+        MonitorEvent::BatchDone { .. } => {
+            let _ = app.emit("saves-updated", ());
+        }
+        MonitorEvent::Finished(summary) => {
+            let _ = app.emit("saves-updated", ());
+            if progress {
+                let _ = app.emit(
+                    "recheck-progress",
+                    RecheckProgress {
+                        done: summary.checked,
+                        total: summary.checked,
+                        finished: true,
+                    },
+                );
+            }
+        }
+        _ => {}
+    })
+}
+
 /// Queue a re-check of every save in the background. Emits "saves-updated"
 /// as results land and "recheck-progress" so the UI can show progress.
 /// Returns the number of saves queued.
 #[tauri::command]
 pub fn recheck_all(app: AppHandle, vault: VaultState) -> Result<i64, String> {
-    let targets = vault.saves_due_for_check(-1, 10_000).map_err(err)?;
-    let total = targets.len();
+    let total = vault.count_saves().map_err(err)?;
     log::info!("recheck_all: queueing {total} link check(s)");
 
     // Nothing to do — tell the UI immediately so it doesn't spin forever.
@@ -360,38 +426,18 @@ pub fn recheck_all(app: AppHandle, vault: VaultState) -> Result<i64, String> {
         return Ok(0);
     }
 
-    let vault = vault.inner().clone();
+    // More hosts in flight than the background daemon: the user is watching
+    // a progress bar and asked for this explicitly. Per-host pacing is
+    // unchanged, so no individual server sees a heavier load.
+    let config = MonitorConfig {
+        max_concurrency: 24,
+        ..Default::default()
+    };
+    let monitor = build_monitor(app, vault.inner().clone(), config, true);
     std::thread::spawn(move || {
-        for (i, t) in targets.iter().enumerate() {
-            let outcome = websave_core::check_url(&t.url, &t.content_hash, t.hash_algo);
-            let _ = vault.apply_check(t.id, &outcome);
-            vault.maybe_fetch_thumbnail(t.id, outcome.og_image.as_deref());
-            // Checks are network-bound (~1/s), so one progress event each is
-            // naturally paced; the list itself refreshes every few results.
-            let _ = app.emit(
-                "recheck-progress",
-                RecheckProgress {
-                    done: i + 1,
-                    total,
-                    finished: false,
-                },
-            );
-            if i % 5 == 4 {
-                let _ = app.emit("saves-updated", ());
-            }
-        }
-        let _ = app.emit("saves-updated", ());
-        let _ = app.emit(
-            "recheck-progress",
-            RecheckProgress {
-                done: total,
-                total,
-                finished: true,
-            },
-        );
-        log::info!("recheck_all: finished");
+        monitor.run_all();
     });
-    Ok(total as i64)
+    Ok(total)
 }
 
 #[tauri::command]

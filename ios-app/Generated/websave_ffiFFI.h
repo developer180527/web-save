@@ -273,7 +273,7 @@ RustBuffer uniffi_websave_ffi_fn_method_vaulthandle_add(void*_Nonnull ptr, RustB
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_WEBSAVE_FFI_FN_METHOD_VAULTHANDLE_CHECK_DUE
 #define UNIFFI_FFIDEF_UNIFFI_WEBSAVE_FFI_FN_METHOD_VAULTHANDLE_CHECK_DUE
-uint32_t uniffi_websave_ffi_fn_method_vaulthandle_check_due(void*_Nonnull ptr, int64_t max_age_secs, int64_t limit, RustCallStatus *_Nonnull out_status
+uint32_t uniffi_websave_ffi_fn_method_vaulthandle_check_due(void*_Nonnull ptr, int64_t limit, uint32_t budget_secs, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_WEBSAVE_FFI_FN_METHOD_VAULTHANDLE_DELETE

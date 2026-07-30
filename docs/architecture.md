@@ -76,10 +76,31 @@ vault/
 `Vault::open(path)` creates the directory if needed, opens the database in WAL
 mode with foreign keys on, and runs migrations.
 
-### 3.2 Schema and migrations
+### 3.2 Vault module layout
+
+`Vault` is one handle over one `Mutex<Connection>`, but its implementation is
+split by job. Rust allows inherent `impl` blocks anywhere in the defining crate,
+so each submodule adds its own methods and callers still see one flat API:
+
+| File | Owns |
+|---|---|
+| `vault/mod.rs` | the `Vault` handle, directory layout, `open`, `now()` |
+| `vault/saves.rs` | create, read, edit, delete |
+| `vault/search.rs` | listing, filtering, FTS5 + BM25 |
+| `vault/tags.rs` | the tag graph and the denormalized column FTS reads |
+| `vault/link_checks.rs` | which saves are due, and what a check writes back |
+| `vault/trash.rs` | the grace period before a dead link is really gone |
+| `vault/imports.rs` | preview and apply an import |
+| `vault/thumbnails.rs` | cached cover images |
+| `vault/migrations.rs` | the migration array and `PRAGMA user_version` |
+| `vault/save_rows.rs` | one column list and one row mapper, shared |
+| `vault/url_normalization.rs` | canonicalizing URLs |
+| `vault/saved_searches.rs`, `metadata.rs`, `stats.rs` | the smaller stores |
+
+### 3.3 Schema and migrations
 
 Migrations are an append-only array of SQL applied in order and tracked by
-SQLite's `PRAGMA user_version`. The current schema version is **5**. An existing
+SQLite's `PRAGMA user_version`. The current schema version is **8**. An existing
 vault upgrades itself on launch by applying only the migrations newer than its
 recorded version, so upgrades never lose data.
 
@@ -90,7 +111,12 @@ Core tables:
   `status` (link health), `redirect_url`, `http_status`, `content_hash` (for
   change detection), `tags_text` (denormalized tags for FTS), `thumbnail`
   (relative path under `assets/`), `archive_text` (extracted readable page
-  text), `archived_at`, and `created_at` / `updated_at` / `last_checked_at`.
+  text), `archived_at`, `dead_since`, and `created_at` / `updated_at` /
+  `last_checked_at`. Monitoring adds `content_hash_algo` (which hash basis the
+  stored hash used), `etag` / `last_modified` (validators for conditional
+  requests), and `next_check_at` / `check_interval_secs` / `stable_streak`
+  (adaptive scheduling — see §3.6). `next_check_at` is indexed, since selecting
+  due saves is the hottest query the monitor runs.
 - **`tags`** + **`save_tags`** — normalized many-to-many tags. Orphaned tags are
   cleaned up automatically when their last save is removed.
 - **`saves_fts`** — an FTS5 **external-content** virtual table mirroring the
@@ -100,7 +126,7 @@ Core tables:
 - **`meta`** — a generic key/value store. The core attaches no meaning to the
   keys; the host uses it for things like "when did the extension last check in".
 
-### 3.3 Search (FTS5 + weighted BM25)
+### 3.4 Search (FTS5 + weighted BM25)
 
 Free-form user input is tokenized, each token quoted (so FTS5 operators and
 punctuation in the query can never break it) and matched by prefix. Results are
@@ -114,7 +140,7 @@ title (12) > tags (10) > notes (8) > url (6) > description (4) > archive (1)
 This means searching a phrase you remember from inside an article finds it, but
 a title/tag match for the same words still ranks first.
 
-### 3.4 URL canonicalization
+### 3.5 URL canonicalization
 
 Before any insert, URLs are validated (http/https only) and **canonicalized**:
 tracking parameters (`utm_*`, `fbclid`, `gclid`, `igshid`, Mailchimp ids,
@@ -122,15 +148,41 @@ YouTube/Spotify `si`, …) are stripped while real query params survive. The sam
 article shared three different ways therefore dedupes onto a single save —
 `add_save` upserts by the canonical URL.
 
-### 3.5 Link monitoring
+### 3.6 Link monitoring
 
-The core never spawns threads. It exposes the *pieces* of monitoring so the host
-decides when and how to run them:
+Monitoring is owned by core, not by the hosts. `Monitor` holds the vault, the
+sweep config, a cancellation handle and an event sink; the host supplies only
+*when* to run and *how* to display progress. That split exists because there are
+three hosts (Tauri, SwiftUI/iOS, and a planned Qt shell) and the sweep logic
+used to be copy-pasted into each one.
 
-- `saves_due_for_check(max_age, limit)` → lightweight targets (id, url, hash)
-  that haven't been checked recently. Returning plain data means the host can do
-  the network work **without holding the vault lock**.
-- `check_url(url, previous_hash)` → performs one blocking HTTP request and
+- `Monitor::run_due()` → check everything the schedule says is due.
+- `Monitor::run_all()` → force a full sweep, ignoring the schedule ("Re-check
+  all links"). Paged by `id`, since applying results rewrites the due times.
+- `MonitorConfig` → batch size, concurrency, per-host pacing, and optional
+  `max_per_sweep` / `time_budget` caps. iOS uses a tight time budget because its
+  foreground window is short; whatever a sweep doesn't reach stays due.
+- `MonitorEvent` → `Started`, `Checked`, `HostUnreachable`, `BatchDone`,
+  `Finished(SweepSummary)`. The Tauri host maps these onto its IPC events; iOS
+  updates an observable.
+- `MonitorHandle::cancel()` → stops after the in-flight save, which is still
+  persisted.
+
+The module is split so each decision has one obvious home:
+`monitor/host_grouping.rs` (carving a batch into per-host queues),
+`monitor/host_circuit_breaker.rs` (writing off a host that stopped answering),
+`monitor/target_cursor.rs` (what the next batch contains),
+`monitor/sweep_state.rs` (live counters and the stop decision), and
+`monitor/config.rs` / `events.rs` / `cancel_handle.rs` for the public surface.
+`monitor/mod.rs` only orchestrates.
+
+The pieces underneath stay public, so a host with unusual needs can still drive
+them directly:
+
+- `saves_due_for_check(limit)` → lightweight targets (id, url, hash, validators)
+  that are due now, backed by `idx_saves_next_check`. Returning plain data means
+  the network work happens **without holding the vault lock**.
+- `probe::check(target)` → performs one blocking HTTP request and
   classifies the result into a `LinkStatus`:
   - `active` — reachable, body unchanged.
   - `changed` — reachable, but the SHA-256 of the body differs from last time.
@@ -143,20 +195,122 @@ decides when and how to run them:
     before being believed, which fixes false positives like crates.io serving
     404 to header-less requests.
 - `apply_check(id, outcome)` → persists status, http code, redirect target,
-  content hash, and (if extracted) the archive text + timestamp.
+  content hash, validators, the next scheduled check, and (if extracted) the
+  archive text + timestamp.
 
 The same fetch that checks a link also harvests its **cover image** (`og:image`
-/ `twitter:image`) and its **readable text** (see §3.6, §3.7), so monitoring,
+/ `twitter:image`) and its **readable text** (see §3.7, §3.8), so monitoring,
 thumbnails, and archiving all ride one request.
 
-### 3.6 Thumbnails
+#### Concurrency: parallel across hosts, serial within one
+
+The unit of work handed to a worker thread is a **host**, not a link. A batch is
+grouped by host (`host:port`, `www.` stripped and case-folded, so
+`www.example.com` and `example.com` are the one machine they almost always are),
+and each group is worked start-to-finish by a single thread.
+
+That grouping is what lets both rules hold at once:
+
+- **Different hosts run in parallel** — up to `max_concurrency`, 16 by default.
+  Link checking is IO-bound, so this sits well above the core count.
+- **One host is never hit concurrently**, and its requests are spaced by
+  `min_host_gap` (1s default). The gap paces request *starts*, so a server
+  slower than the gap isn't charged for it twice.
+
+The obvious alternative — one shared queue of links plus a per-host lock — passes
+the parallelism test and fails in production: 300 saves from one domain would
+park every worker on the same lock. Grouping avoids the head-of-line block
+entirely and needs no locking during the request at all.
+
+Workers are scoped OS threads (`std::thread::scope`) running the blocking
+prober, not an async runtime. Core is embedded through UniFFI into Swift, and a
+Qt shell is planned; a synchronous engine stays embeddable in a synchronous host
+without dragging a reactor into it. At 16–24 in-flight sockets the thread cost
+is irrelevant, and per-host pacing caps the real concurrency long before thread
+count would.
+
+`Prober` holds one `ureq::Agent` for the whole sweep, so its connection pool
+survives between requests — the previous code built an agent per URL and paid a
+fresh TLS handshake every time, even for hundreds of pages on one host.
+
+Measured on a 20-link vault spread across 18 hosts: **34.1s serial → 2.6s at
+concurrency 16**. With validators stored, a re-check of the same vault runs in
+2.4s, of which 12 links settled on a 304.
+
+#### Dead-host circuit breaker
+
+Because a worker owns a host's whole queue, it can also notice the host is
+gone. After `host_failure_threshold` (3) consecutive **transport** failures —
+DNS failure, connection refused, TLS failure, timeout — the sweep abandons that
+host's remaining links. State is per sweep and shared across batches, so a dead
+domain is learned once, not once per batch.
+
+Two rules make it safe:
+
+- **Only transport failures count.** A 404 is a healthy server answering a
+  question about one page and predicts nothing about the next link on that host.
+- **Skipped links are not judged.** They keep their stored status and stay due,
+  and no `dead_since` countdown is started. Inheriting a `dead` verdict from
+  their neighbours would be cheap and wrong: the same signal is produced by the
+  user's wifi being off, and would march a whole vault into the Trash's 30-day
+  deletion during a train journey. The breaker is an optimisation, not a
+  verdict — a later sweep decides. A vault converges on the truth over
+  successive sweeps, three links per host at a time.
+
+Because skipped links stay due — and, being the oldest-due rows, sort to the
+front of the next query — the due cursor has to offset past them or the sweep
+would be handed the same batch forever. That's what
+`saves_due_for_check(limit, offset)`'s second argument is for.
+
+Measured against a host that accepts connections and never answers, 10 links at
+the 20s probe timeout: **200s → 60s**. The saving scales with the number of
+links on the host, since the breaker's cost is a constant 3 probes per host: 200
+saved pages from a lapsed domain go from ~67 minutes to one.
+
+#### Adaptive scheduling (`schedule.rs`)
+
+The original rule was "every link, every 24 hours". That is one request per save
+per day regardless of the vault, so a 10k-save vault needed a sweep that could
+not finish before the next was due — and nearly all of it re-fetched pages that
+had not changed in months.
+
+Each save now carries its own `next_check_at`, `check_interval_secs` and
+`stable_streak`:
+
+- Unchanged → the interval doubles, from a **6-hour floor** to a **30-day
+  ceiling**.
+- Changed or redirected → straight back to the floor, streak reset.
+- Dead → a fixed **12-hour** cadence. Dead links are on a 30-day deletion
+  countdown, and only a check can notice the site coming back; backing them off
+  would shrink their chance of recovery the longer they'd been gone.
+- Favorite or unread → capped at **24 hours**. These are the saves where a
+  stale status is actually noticed.
+- Due times are jittered ±10%, derived from the save id, so a 5,000-link import
+  doesn't come due as one thundering herd. Deterministic, so no random source
+  and no untestable schedule.
+
+The daily working set therefore tracks how volatile the vault is rather than how
+large it is.
+
+#### Conditional requests
+
+A save stores the `ETag` and `Last-Modified` of its last successful fetch and
+sends them back as `If-None-Match` / `If-Modified-Since`. A **304** settles the
+check for a few hundred bytes: no body download, no text extraction, no hashing,
+and every stored content field is left untouched.
+
+Validators are only sent when the stored hash is present *and* computed under
+the current `HASH_ALGO` — a stale hash basis has to re-baseline, and
+re-baselining needs a body. See `docs/content-hashing.md`.
+
+### 3.7 Thumbnails
 
 On a check, the core extracts the page's declared cover image URL, downloads it
 once (size/content-type validated), and stores it under `assets/thumbs/{id}.ext`,
 recording the relative path on the save. It never overwrites an existing
 thumbnail (so an extension-supplied screenshot, see §7, is preserved).
 
-### 3.7 Archive snapshots
+### 3.8 Archive snapshots
 
 The core extracts the readable text of each checked page (scripts/styles/chrome
 stripped, the `<article>`/`<main>` subtree preferred, whitespace normalized,
@@ -164,7 +318,7 @@ capped at 100K chars) and stores it in `archive_text`, which feeds the FTS
 `archive` column. Result: pages stay **searchable by content even after they go
 dead**, and you can read the snapshot from the edit panel.
 
-### 3.8 Import
+### 3.9 Import
 
 `import.rs` parses four bookmark formats by sniffing the file: Netscape bookmark
 HTML (every browser's export, plus Pocket's HTML variant), Raindrop.io CSV,
@@ -206,11 +360,14 @@ menubar) refreshes.
 
 ### 5.2 Background link monitor (with a wake channel)
 
-A single background thread runs the monitor loop. Instead of a blind timer it
-waits on an `mpsc` channel with a timeout (`recv_timeout`):
+A single background thread drives `websave_core::Monitor`. Instead of a blind
+timer it waits on an `mpsc` channel with a timeout (`recv_timeout`):
 
-- It wakes on its own at least every 30 minutes and re-checks links not seen in
-  24 hours, in polite batches of 20.
+- It wakes on its own at least every 30 minutes and runs `run_due()`. Waking
+  often is cheap — which saves are actually due is `schedule.rs`'s decision
+  (§3.6), so most wake-ups find little or nothing to do. A user-triggered
+  "Re-check all links" runs at higher concurrency (24) since someone is watching
+  it; per-host pacing is the same either way, so no individual server notices.
 - It wakes **immediately** when a new URL is added — `add_save` (UI), the
   capture server (extension), and import all poke a `MonitorWaker`. A
   one-second debounce coalesces bursts into a single batch.
@@ -312,7 +469,7 @@ and a local-network permission for the localhost call — tracked as future work
   connection status, offers a "Save this page" button, and links to the app
   download when the engine isn't running.
 - **Cover images:** if the page declares an `og:image`, the engine fetches it
-  (§3.6). If it does *not*, the extension captures a **screenshot** of the
+  (§3.7). If it does *not*, the extension captures a **screenshot** of the
   visible tab (`captureVisibleTab`) and includes it in the payload; the engine
   decodes and stores it as the thumbnail. This is the one thing only the
   extension can do, because it lives inside the browser.

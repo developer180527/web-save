@@ -1,7 +1,7 @@
 Written on Sun Jun 14 {
 
 \* Need to make the macOS menubar more polished and align stuff to they look
-organized.
+organized and make the website's icons bigger.
 
 \* Need to make the search fuzzy search.
 
@@ -17,23 +17,17 @@ directly search them and enter the  website.
 
 }
 
-Written on Wed Jul 8 {
-
-\* Need to make UI assurance on the bottom left button "Re-check all links"
-with a loading sign
-
-}
-
 Written on Thu Jul 9 {
 
 \* Need to make saved websites accessible and searchable by chrome extension.
-Add a very basic fuzzy search in it.
+Add a very basic fuzzy search in it. Its added but it does NOT shows the
+websites.
 
 }
 
 Written on Sat Jul 11 {
 
-\* Add an in-app preview of the website using the existing web view APIs.
+\* Add an in-app preview of the website using the existing system web view.
 
 \* Add UI customizability in the settings panel. 
 
@@ -53,5 +47,13 @@ icon appear.  
 \* Add a feature / toggle in settings to auto remove "dead" sites in database
 after 30 days.
 
-\*  
+}
+
+Written on Thu Jul 30 {
+
+Make a map feature which lets the users browse the world map and see the geo
+location of where their saved websites are hosted or located on the map by
+using the website's IP.
+
+}
 
