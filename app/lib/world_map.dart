@@ -199,21 +199,41 @@ class _Legend extends StatelessWidget {
             hovered == null
                 ? '${data.points.length} hosts plotted · ${data.locatedHosts} located'
                 : '${hovered!.host} — ${hovered!.saveCount} save(s) · '
-                      '${hovered!.city.isEmpty ? "?" : hovered!.city}, ${hovered!.country} · ${hovered!.ip}',
+                      '${hovered!.provider.isEmpty ? hovered!.ip : hovered!.provider}'
+                      '${hovered!.anycast ? " (anycast)" : ""} · '
+                      '${hovered!.city.isEmpty ? "?" : hovered!.city}, ${hovered!.country}',
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
+          // The provider list is the honest one, so it leads. Countries stay
+          // because they are still meaningful for self-hosted sites.
+          if (data.providers.isNotEmpty)
+            Wrap(
+              spacing: 14,
+              children: [
+                for (final (org, count) in data.providers.take(5))
+                  Text('$org $count'),
+              ],
+            ),
           Wrap(
             spacing: 14,
             children: [
-              for (final (code, count) in top) Text('$code $count'),
+              for (final (code, count) in top)
+                Text(
+                  '$code $count',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            'Where the bytes come from, not where the site is from. Most of '
-            'these are CDN edges — a host behind Cloudflare or Akamai is '
-            'plotted wherever the database places that anycast range.',
+            data.providers.isEmpty
+                ? 'Where the bytes come from, not where the site is from. '
+                      'Most of these are CDN edges. Install an ASN database to '
+                      'see which network actually serves each host.'
+                : 'Where the bytes come from, not where the site is from. For '
+                      'the networks marked anycast the dot is roughly '
+                      'arbitrary — the provider name is the real answer.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).hintColor,
             ),

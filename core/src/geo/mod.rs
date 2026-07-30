@@ -19,20 +19,24 @@
 //! served by three companies" is a real answer — but the UI should say
 //! *served from*, never *located in*.
 
+mod asn_lookup;
 mod dns_resolution;
 mod ip_geolocation;
 
+pub use asn_lookup::{is_likely_anycast, AsnLookup, Network};
 pub use dns_resolution::resolve_host;
 pub use ip_geolocation::{IpGeolocator, IpLocation};
 
 use std::path::Path;
 
-/// The filename the app looks for inside the vault's assets directory.
+/// Filenames the app looks for inside the vault's assets directory.
 ///
 /// Kept in the vault rather than beside the binary so it travels with the
 /// user's data, and so an app update never silently discards a 150 MB
 /// download.
 pub const GEO_DB_FILE: &str = "geoip.mmdb";
+/// The ASN database, which ships separately from the city/country one.
+pub const ASN_DB_FILE: &str = "geoip-asn.mmdb";
 
 /// A resolved host: address plus place.
 #[derive(Debug, Clone, PartialEq)]
@@ -44,6 +48,11 @@ pub struct HostLocation {
     pub city: String,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
+    /// Autonomous system number announcing the address.
+    pub asn: Option<u32>,
+    /// The network's registered organisation, e.g. `CLOUDFLARENET`. This is
+    /// the honest answer for a CDN-hosted page; the coordinates are not.
+    pub asn_org: String,
     /// Unix seconds this was looked up.
     pub resolved_at: i64,
     /// How many saves live on this host. Only populated by queries that
@@ -54,6 +63,9 @@ pub struct HostLocation {
 /// Resolves hosts to places. Holds the geolocation database open.
 pub struct GeoLocator {
     geolocator: IpGeolocator,
+    /// Optional second database. Without it the map still works, it just
+    /// can't say which network is serving a host.
+    asn: Option<AsnLookup>,
 }
 
 impl GeoLocator {
@@ -63,17 +75,37 @@ impl GeoLocator {
     /// normal state on a fresh install — the feature is opt-in because the
     /// database is a large third-party file the user chooses to fetch.
     pub fn open_in(assets_dir: impl AsRef<Path>) -> Result<GeoLocator, String> {
-        GeoLocator::open(assets_dir.as_ref().join(GEO_DB_FILE))
+        let assets_dir = assets_dir.as_ref();
+        Ok(GeoLocator::open(assets_dir.join(GEO_DB_FILE))?.with_asn_in(assets_dir))
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<GeoLocator, String> {
         Ok(GeoLocator {
             geolocator: IpGeolocator::open(path)?,
+            asn: None,
         })
     }
 
+    /// Attach an ASN database, if one is installed alongside.
+    pub fn with_asn_in(mut self, assets_dir: impl AsRef<Path>) -> GeoLocator {
+        let path = assets_dir.as_ref().join(ASN_DB_FILE);
+        match AsnLookup::open(&path) {
+            Ok(asn) => self.asn = Some(asn),
+            Err(e) => log::debug!("geo: no ASN database ({e})"),
+        }
+        self
+    }
+
     pub fn describe(&self) -> String {
-        self.geolocator.describe()
+        match &self.asn {
+            Some(asn) => format!("{} + {}", self.geolocator.describe(), asn.describe()),
+            None => self.geolocator.describe(),
+        }
+    }
+
+    /// Whether provider names are available.
+    pub fn has_networks(&self) -> bool {
+        self.asn.is_some()
     }
 
     /// Resolve one host and place it. `None` when DNS fails, the address is
@@ -83,6 +115,11 @@ impl GeoLocator {
     pub fn locate_host(&self, host: &str, now: i64) -> Option<HostLocation> {
         let ip = resolve_host(host)?;
         let place = self.geolocator.locate(ip)?;
+        let network = self
+            .asn
+            .as_ref()
+            .and_then(|a| a.lookup(ip))
+            .unwrap_or_default();
         Some(HostLocation {
             host: host.to_string(),
             ip: ip.to_string(),
@@ -90,6 +127,8 @@ impl GeoLocator {
             city: place.city,
             latitude: place.latitude,
             longitude: place.longitude,
+            asn: network.asn,
+            asn_org: network.organization,
             resolved_at: now,
             save_count: 0,
         })

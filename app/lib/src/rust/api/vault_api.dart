@@ -43,6 +43,10 @@ class MapData {
   /// distinguish "no database yet" from "nothing resolved yet".
   final PlatformInt64 locatedHosts;
 
+  /// `(network, host count)`, busiest first. The truthful counterpart to
+  /// the dots — see `websave_core::geo::asn_lookup`.
+  final List<(String, PlatformInt64)> providers;
+
   /// A description of the loaded database, or null when none is installed.
   final String? database;
 
@@ -50,6 +54,7 @@ class MapData {
     required this.points,
     required this.countries,
     required this.locatedHosts,
+    required this.providers,
     this.database,
   });
 
@@ -58,6 +63,7 @@ class MapData {
       points.hashCode ^
       countries.hashCode ^
       locatedHosts.hashCode ^
+      providers.hashCode ^
       database.hashCode;
 
   @override
@@ -68,6 +74,7 @@ class MapData {
           points == other.points &&
           countries == other.countries &&
           locatedHosts == other.locatedHosts &&
+          providers == other.providers &&
           database == other.database;
 }
 
@@ -82,6 +89,14 @@ class MapPoint {
   final double longitude;
   final PlatformInt64 saveCount;
 
+  /// The network announcing this address, e.g. `CLOUDFLARENET`. Empty when
+  /// no ASN database is installed.
+  final String provider;
+
+  /// Whether that network is one whose addresses are anycast, meaning the
+  /// coordinates say much less than the provider name does.
+  final bool anycast;
+
   const MapPoint({
     required this.host,
     required this.ip,
@@ -90,6 +105,8 @@ class MapPoint {
     required this.latitude,
     required this.longitude,
     required this.saveCount,
+    required this.provider,
+    required this.anycast,
   });
 
   @override
@@ -100,7 +117,9 @@ class MapPoint {
       city.hashCode ^
       latitude.hashCode ^
       longitude.hashCode ^
-      saveCount.hashCode;
+      saveCount.hashCode ^
+      provider.hashCode ^
+      anycast.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -113,7 +132,9 @@ class MapPoint {
           city == other.city &&
           latitude == other.latitude &&
           longitude == other.longitude &&
-          saveCount == other.saveCount;
+          saveCount == other.saveCount &&
+          provider == other.provider &&
+          anycast == other.anycast;
 }
 
 /// A save, flattened for Dart.

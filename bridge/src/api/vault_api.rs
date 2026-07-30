@@ -143,6 +143,12 @@ pub struct MapPoint {
     pub latitude: f64,
     pub longitude: f64,
     pub save_count: i64,
+    /// The network announcing this address, e.g. `CLOUDFLARENET`. Empty when
+    /// no ASN database is installed.
+    pub provider: String,
+    /// Whether that network is one whose addresses are anycast, meaning the
+    /// coordinates say much less than the provider name does.
+    pub anycast: bool,
 }
 
 pub struct MapData {
@@ -153,6 +159,9 @@ pub struct MapData {
     /// Hosts located at all, including ones with no coordinates. Lets the UI
     /// distinguish "no database yet" from "nothing resolved yet".
     pub located_hosts: i64,
+    /// `(network, host count)`, busiest first. The truthful counterpart to
+    /// the dots — see `websave_core::geo::asn_lookup`.
+    pub providers: Vec<(String, i64)>,
     /// A description of the loaded database, or null when none is installed.
     pub database: Option<String>,
 }
@@ -173,12 +182,15 @@ pub fn map_data() -> Result<MapData, String> {
                 country: p.country,
                 city: p.city,
                 save_count: p.save_count,
+                anycast: websave_core::geo::is_likely_anycast(&p.asn_org),
+                provider: p.asn_org,
             })
         })
         .collect();
     Ok(MapData {
         points,
         countries: vault.hosts_by_country().map_err(|e| e.to_string())?,
+        providers: vault.hosts_by_provider().map_err(|e| e.to_string())?,
         located_hosts: vault.located_host_count().map_err(|e| e.to_string())?,
         database: websave_core::GeoLocator::open_in(vault.assets_dir())
             .ok()

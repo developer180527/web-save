@@ -341,11 +341,13 @@ impl SseDecode for crate::api::vault_api::MapData {
         let mut var_points = <Vec<crate::api::vault_api::MapPoint>>::sse_decode(deserializer);
         let mut var_countries = <Vec<(String, i64)>>::sse_decode(deserializer);
         let mut var_locatedHosts = <i64>::sse_decode(deserializer);
+        let mut var_providers = <Vec<(String, i64)>>::sse_decode(deserializer);
         let mut var_database = <Option<String>>::sse_decode(deserializer);
         return crate::api::vault_api::MapData {
             points: var_points,
             countries: var_countries,
             located_hosts: var_locatedHosts,
+            providers: var_providers,
             database: var_database,
         };
     }
@@ -361,6 +363,8 @@ impl SseDecode for crate::api::vault_api::MapPoint {
         let mut var_latitude = <f64>::sse_decode(deserializer);
         let mut var_longitude = <f64>::sse_decode(deserializer);
         let mut var_saveCount = <i64>::sse_decode(deserializer);
+        let mut var_provider = <String>::sse_decode(deserializer);
+        let mut var_anycast = <bool>::sse_decode(deserializer);
         return crate::api::vault_api::MapPoint {
             host: var_host,
             ip: var_ip,
@@ -369,6 +373,8 @@ impl SseDecode for crate::api::vault_api::MapPoint {
             latitude: var_latitude,
             longitude: var_longitude,
             save_count: var_saveCount,
+            provider: var_provider,
+            anycast: var_anycast,
         };
     }
 }
@@ -519,6 +525,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::vault_api::MapData {
             self.points.into_into_dart().into_dart(),
             self.countries.into_into_dart().into_dart(),
             self.located_hosts.into_into_dart().into_dart(),
+            self.providers.into_into_dart().into_dart(),
             self.database.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -546,6 +553,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::vault_api::MapPoint {
             self.latitude.into_into_dart().into_dart(),
             self.longitude.into_into_dart().into_dart(),
             self.save_count.into_into_dart().into_dart(),
+            self.provider.into_into_dart().into_dart(),
+            self.anycast.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -704,6 +713,7 @@ impl SseEncode for crate::api::vault_api::MapData {
         <Vec<crate::api::vault_api::MapPoint>>::sse_encode(self.points, serializer);
         <Vec<(String, i64)>>::sse_encode(self.countries, serializer);
         <i64>::sse_encode(self.located_hosts, serializer);
+        <Vec<(String, i64)>>::sse_encode(self.providers, serializer);
         <Option<String>>::sse_encode(self.database, serializer);
     }
 }
@@ -718,6 +728,8 @@ impl SseEncode for crate::api::vault_api::MapPoint {
         <f64>::sse_encode(self.latitude, serializer);
         <f64>::sse_encode(self.longitude, serializer);
         <i64>::sse_encode(self.save_count, serializer);
+        <String>::sse_encode(self.provider, serializer);
+        <bool>::sse_encode(self.anycast, serializer);
     }
 }
 

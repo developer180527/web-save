@@ -16,14 +16,16 @@ impl Vault {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO host_locations
-                (host, ip, country, city, latitude, longitude, resolved_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                (host, ip, country, city, latitude, longitude, asn, asn_org, resolved_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(host) DO UPDATE SET
                 ip = excluded.ip,
                 country = excluded.country,
                 city = excluded.city,
                 latitude = excluded.latitude,
                 longitude = excluded.longitude,
+                asn = excluded.asn,
+                asn_org = excluded.asn_org,
                 resolved_at = excluded.resolved_at",
             params![
                 location.host,
@@ -32,6 +34,8 @@ impl Vault {
                 location.city,
                 location.latitude,
                 location.longitude,
+                location.asn,
+                location.asn_org,
                 location.resolved_at,
             ],
         )?;
@@ -74,7 +78,7 @@ impl Vault {
 
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT host, ip, country, city, latitude, longitude, resolved_at
+            "SELECT host, ip, country, city, latitude, longitude, asn, asn_org, resolved_at
              FROM host_locations
              WHERE latitude IS NOT NULL AND longitude IS NOT NULL",
         )?;
@@ -89,7 +93,9 @@ impl Vault {
                     city: r.get(3)?,
                     latitude: r.get(4)?,
                     longitude: r.get(5)?,
-                    resolved_at: r.get(6)?,
+                    asn: r.get(6)?,
+                    asn_org: r.get(7)?,
+                    resolved_at: r.get(8)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -107,6 +113,24 @@ impl Vault {
         let mut stmt = conn.prepare(
             "SELECT country, COUNT(*) FROM host_locations
              WHERE country != '' GROUP BY country ORDER BY COUNT(*) DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Hosts per serving network, busiest first.
+    ///
+    /// The truthful counterpart to the map. A coordinate for an anycast CDN
+    /// address is close to arbitrary; the announcing network is a fact, and
+    /// "17 of your hosts are behind Cloudflare" is the more useful sentence
+    /// anyway.
+    pub fn hosts_by_provider(&self) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT asn_org, COUNT(*) FROM host_locations
+             WHERE asn_org != '' GROUP BY asn_org ORDER BY COUNT(*) DESC, asn_org",
         )?;
         let rows = stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?

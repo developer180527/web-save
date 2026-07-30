@@ -187,6 +187,19 @@ CREATE TABLE host_locations (
     resolved_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 "#,
+    // v10: which network announces each host's address.
+    //
+    // Separate from v9 rather than folded into it: any vault that has already
+    // opened once is recorded as being at v9, so editing v9 in place would
+    // leave it permanently missing these columns.
+    //
+    // This is the column that makes the map truthful. A coordinate for an
+    // anycast CDN address is close to arbitrary, but the announcing AS is a
+    // fact — "Cloudflare, 17 sites" is true where "Toronto, 17 sites" is not.
+    r#"
+ALTER TABLE host_locations ADD COLUMN asn INTEGER;
+ALTER TABLE host_locations ADD COLUMN asn_org TEXT NOT NULL DEFAULT '';
+"#,
 ];
 
 pub(super) fn migrate(conn: &Connection) -> Result<()> {

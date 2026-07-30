@@ -356,13 +356,23 @@ version did the latter and used `LTRIM(host, 'wW.')` to strip `www.` — LTRIM
 strips a character *set*, so `wikipedia.org` became `ikipedia.org` and silently
 counted zero saves.
 
-**What it measures.** The serving edge, not the origin. Most of a modern
-bookmark collection sits behind a CDN, and for anycast ranges the database can
-only name one of the many cities that address answers from — on a real 40-host
-vault, 17 landed on "Toronto" purely for being behind Cloudflare. The UI says
-*served from* and states the caveat inline. Resolving the hosting provider by
-ASN would turn those 17 dots into one true statement ("Cloudflare · 17 sites");
-that is the natural next step.
+**What it measures, and why the ASN matters.** The serving edge, not the
+origin. Most of a modern bookmark collection sits behind a CDN, and for anycast
+ranges the coordinate is close to arbitrary — the database can only name one of
+the many cities that address answers from. On a real 40-host vault, 17 hosts
+plotted onto "Toronto" for no reason other than being behind Cloudflare.
+
+So a second database (`geo/asn_lookup.rs`, migration v10, ~5 MB) records the
+network announcing each address. That *is* a fact: the address really is
+announced by Cloudflare, so "Cloudflare · 17 sites" is true where "Toronto · 17
+sites" is not — and it is the more interesting sentence anyway. The same 40-host
+vault breaks down as Cloudflare 17, Amazon 9, Google 3, Bunny 2, Hetzner 2.
+
+The UI leads with the provider list, keeps countries as a secondary row (still
+meaningful for self-hosted sites — the two Hetzner hosts really are in Germany),
+labels known anycast networks as such on hover, and says *served from* rather
+than *located in*. Without an ASN database installed the map still works; it
+just cannot name the network.
 
 
 ## 4. The vault on disk (portability)

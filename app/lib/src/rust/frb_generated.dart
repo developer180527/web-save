@@ -338,13 +338,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MapData dco_decode_map_data(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return MapData(
       points: dco_decode_list_map_point(arr[0]),
       countries: dco_decode_list_record_string_i_64(arr[1]),
       locatedHosts: dco_decode_i_64(arr[2]),
-      database: dco_decode_opt_String(arr[3]),
+      providers: dco_decode_list_record_string_i_64(arr[3]),
+      database: dco_decode_opt_String(arr[4]),
     );
   }
 
@@ -352,8 +353,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MapPoint dco_decode_map_point(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return MapPoint(
       host: dco_decode_String(arr[0]),
       ip: dco_decode_String(arr[1]),
@@ -362,6 +363,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       latitude: dco_decode_f_64(arr[4]),
       longitude: dco_decode_f_64(arr[5]),
       saveCount: dco_decode_i_64(arr[6]),
+      provider: dco_decode_String(arr[7]),
+      anycast: dco_decode_bool(arr[8]),
     );
   }
 
@@ -533,11 +536,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_points = sse_decode_list_map_point(deserializer);
     var var_countries = sse_decode_list_record_string_i_64(deserializer);
     var var_locatedHosts = sse_decode_i_64(deserializer);
+    var var_providers = sse_decode_list_record_string_i_64(deserializer);
     var var_database = sse_decode_opt_String(deserializer);
     return MapData(
       points: var_points,
       countries: var_countries,
       locatedHosts: var_locatedHosts,
+      providers: var_providers,
       database: var_database,
     );
   }
@@ -552,6 +557,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_latitude = sse_decode_f_64(deserializer);
     var var_longitude = sse_decode_f_64(deserializer);
     var var_saveCount = sse_decode_i_64(deserializer);
+    var var_provider = sse_decode_String(deserializer);
+    var var_anycast = sse_decode_bool(deserializer);
     return MapPoint(
       host: var_host,
       ip: var_ip,
@@ -560,6 +567,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       latitude: var_latitude,
       longitude: var_longitude,
       saveCount: var_saveCount,
+      provider: var_provider,
+      anycast: var_anycast,
     );
   }
 
@@ -760,6 +769,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_map_point(self.points, serializer);
     sse_encode_list_record_string_i_64(self.countries, serializer);
     sse_encode_i_64(self.locatedHosts, serializer);
+    sse_encode_list_record_string_i_64(self.providers, serializer);
     sse_encode_opt_String(self.database, serializer);
   }
 
@@ -773,6 +783,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.latitude, serializer);
     sse_encode_f_64(self.longitude, serializer);
     sse_encode_i_64(self.saveCount, serializer);
+    sse_encode_String(self.provider, serializer);
+    sse_encode_bool(self.anycast, serializer);
   }
 
   @protected

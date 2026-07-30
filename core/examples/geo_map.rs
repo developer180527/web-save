@@ -26,7 +26,10 @@ fn main() {
     }
     println!("{} distinct hosts, {missed} unresolved\n", hosts.len());
 
-    println!("{:<34} {:>5}  {:<22} IP", "HOST", "SAVES", "SERVED FROM");
+    println!(
+        "{:<30} {:>5}  {:<20} NETWORK",
+        "HOST", "SAVES", "SERVED FROM"
+    );
     for p in vault.map_points().unwrap().iter().take(20) {
         println!(
             "{:<34} {:>5}  {:<22} {}",
@@ -40,8 +43,17 @@ fn main() {
             p.ip
         );
     }
+    println!("\nBy serving network:");
+    for (org, n) in vault.hosts_by_provider().unwrap() {
+        let flag = if websave_core::geo::is_likely_anycast(&org) {
+            " (anycast)"
+        } else {
+            ""
+        };
+        println!("  {n:>3}  {org}{flag}");
+    }
     println!("\nBy country:");
     for (country, n) in vault.hosts_by_country().unwrap() {
-        println!("  {country}  {n}");
+        println!("  {n:>3}  {country}");
     }
 }

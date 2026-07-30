@@ -30,6 +30,8 @@ fn located(host: &str, city: &str, lat: f64, lon: f64) -> HostLocation {
         city: city.into(),
         latitude: Some(lat),
         longitude: Some(lon),
+        asn: Some(13335),
+        asn_org: "CLOUDFLARENET".into(),
         resolved_at: 1_800_000_000,
         save_count: 0,
     }
@@ -204,4 +206,50 @@ fn a_missing_database_is_a_clean_error() {
     };
     assert!(error.contains("geoip.mmdb"), "{error}");
     drop(dir);
+}
+
+/// The point of the ASN database: a truthful grouping to sit beside the dots.
+#[test]
+fn hosts_are_grouped_by_serving_network() {
+    let (_dir, vault) = vault();
+    for (i, org) in ["CLOUDFLARENET", "CLOUDFLARENET", "Fastly, Inc.", ""]
+        .iter()
+        .enumerate()
+    {
+        vault
+            .set_host_location(&HostLocation {
+                host: format!("h{i}.example"),
+                asn_org: (*org).into(),
+                ..located("x", "Somewhere", 1.0, 2.0)
+            })
+            .unwrap();
+    }
+
+    let providers = vault.hosts_by_provider().unwrap();
+    assert_eq!(
+        providers,
+        vec![("CLOUDFLARENET".into(), 2), ("Fastly, Inc.".into(), 1)],
+        "hosts with no known network are left out rather than bucketed as ''"
+    );
+}
+
+/// Without an ASN database installed the map still works; it just cannot name
+/// the provider.
+#[test]
+fn a_missing_asn_database_leaves_locations_usable() {
+    let (_dir, vault) = vault();
+    save(&vault, "https://example.com/x");
+    vault
+        .set_host_location(&HostLocation {
+            asn: None,
+            asn_org: String::new(),
+            ..located("example.com", "Paris", 48.85, 2.35)
+        })
+        .unwrap();
+
+    let points = vault.map_points().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].save_count, 1);
+    assert!(points[0].asn_org.is_empty());
+    assert!(vault.hosts_by_provider().unwrap().is_empty());
 }
