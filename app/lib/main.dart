@@ -8,6 +8,7 @@
 // rather than bundled. Wiring cargokit into the Xcode build is a Phase 4
 // job and would only be in the way right now.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -79,18 +80,89 @@ String? findRustLibrary() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await setUpDesktopWindow();
+  // Paint *first*, then initialise. Awaiting anything before runApp means a
+  // step that hangs rather than throws shows a blank screen and nothing else
+  // — which is exactly what the first iPad build did, with no VM service
+  // reachable to explain it. Now the device reports its own startup.
+  runApp(const Bootstrap());
+}
 
-  // A probe that dies before runApp() shows a black window and tells you
-  // nothing, so every failure is caught and rendered instead.
-  try {
-    await RustLib.init(externalLibrary: rustLibrary());
-    final opened = await openVault(path: await vaultPath());
-    // The engine reads its saved selection from the vault, so it can only be
-    // built once the vault is open.
-    final engine = await createThemeEngine();
-    runApp(WebSaveApp(engine: engine, vaultPath: opened));
-  } catch (e, stack) {
-    runApp(StartupFailure(message: '$e', stack: '$stack'));
+/// Runs startup with each step visible, and turns a hang into a message.
+class Bootstrap extends StatefulWidget {
+  const Bootstrap({super.key});
+
+  @override
+  State<Bootstrap> createState() => _BootstrapState();
+}
+
+class _BootstrapState extends State<Bootstrap> {
+  /// Generous, but finite. Every step here is local work — no step should
+  /// take seconds, so anything that does is stuck rather than slow.
+  static const _stepTimeout = Duration(seconds: 20);
+
+  String _step = 'Starting…';
+  Widget? _app;
+  String? _error;
+  String? _stack;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<T> _run<T>(String label, Future<T> Function() step) async {
+    setState(() => _step = label);
+    return step().timeout(
+      _stepTimeout,
+      onTimeout: () => throw TimeoutException(
+        '$label timed out after ${_stepTimeout.inSeconds}s',
+      ),
+    );
+  }
+
+  Future<void> _start() async {
+    try {
+      await _run('Loading the engine…', () async {
+        await RustLib.init(externalLibrary: rustLibrary());
+      });
+      final path = await _run('Finding the vault…', vaultPath);
+      final opened = await _run('Opening the vault…', () => openVault(path: path));
+      // The engine reads its saved selection from the vault, so it can only
+      // be built once the vault is open.
+      final engine = await _run('Restoring the theme…', createThemeEngine);
+      if (!mounted) return;
+      setState(() => _app = WebSaveApp(engine: engine, vaultPath: opened));
+    } catch (e, stack) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _stack = '$stack';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_app != null) return _app!;
+    if (_error != null) {
+      return StartupFailure(message: _error!, stack: _stack ?? '');
+    }
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(_step, style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

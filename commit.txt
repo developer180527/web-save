@@ -1,0 +1,18 @@
+Run on iOS
+
+Verified on the iPad simulator: the bridge loads through
+ExternalLibrary.process(), the vault opens in the app container with all
+migrations applied, the theme engine restores its selection from that
+vault before first paint, and the shell picks the tablet layout from
+width alone.
+
+build_rust_ios.sh now exports IPHONEOS_DEPLOYMENT_TARGET=13.0 to match
+the Xcode project. Without it every object in the archive is stamped with
+the SDK version, which spams a linker warning per object file and would
+stop the library running on anything older than the build machine.
+
+Startup was restructured to paint before initialising. main() used to
+await three things before runApp, so a step that hung rather than threw
+produced a blank screen and nothing else. Bootstrap now shows each named
+step with a timeout, so the device reports its own startup even when no
+debugger can attach.
