@@ -17,12 +17,16 @@ class DesktopShell extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     this.trailing,
+    this.sidebar,
   });
 
   final List<ShellDestination> destinations;
   final int selected;
   final ValueChanged<int> onSelect;
   final WidgetBuilder? trailing;
+
+  /// When supplied, replaces the default destination list entirely.
+  final Widget? sidebar;
 
   static const double sidebarWidth = 232;
 
@@ -39,24 +43,26 @@ class DesktopShell extends StatelessWidget {
               color: ws.translucentChrome ? ws.panel.withValues(alpha: 0.7) : ws.panel,
               border: Border(right: BorderSide(color: ws.border)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 12),
-                for (var i = 0; i < destinations.length; i++)
-                  SidebarRow(
-                    destination: destinations[i],
-                    selected: i == selected,
-                    onTap: () => onSelect(i),
-                  ),
-                const Spacer(),
-                if (trailing != null)
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: trailing!(context),
-                  ),
-              ],
-            ),
+            child:
+                sidebar ??
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 12),
+                    for (var i = 0; i < destinations.length; i++)
+                      SidebarRow(
+                        destination: destinations[i],
+                        selected: i == selected,
+                        onTap: () => onSelect(i),
+                      ),
+                    const Spacer(),
+                    if (trailing != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: trailing!(context),
+                      ),
+                  ],
+                ),
           ),
           Expanded(child: destinations[selected].builder(context)),
         ],

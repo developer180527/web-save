@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1330724097;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1047785156;
 
 // Section: executor
 
@@ -267,11 +267,54 @@ fn wire__crate__api__vault_api__list_saves_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_query = <Option<String>>::sse_decode(&mut deserializer);
+            let api_tag = <Option<String>>::sse_decode(&mut deserializer);
+            let api_status = <Option<String>>::sse_decode(&mut deserializer);
+            let api_favorites_only = <bool>::sse_decode(&mut deserializer);
+            let api_unread_only = <bool>::sse_decode(&mut deserializer);
             let api_limit = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok = crate::api::vault_api::list_saves(api_query, api_limit)?;
+                    let output_ok = crate::api::vault_api::list_saves(
+                        api_query,
+                        api_tag,
+                        api_status,
+                        api_favorites_only,
+                        api_unread_only,
+                        api_limit,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__vault_api__list_tags_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_tags",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::vault_api::list_tags()?;
                     Ok(output_ok)
                 })())
             }
@@ -644,6 +687,20 @@ impl SseDecode for Vec<crate::api::vault_api::SaveView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::vault_api::TagCountView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::vault_api::TagCountView>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for crate::api::vault_api::MapData {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -759,6 +816,7 @@ impl SseDecode for crate::api::vault_api::StatsView {
         let mut var_total = <i64>::sse_decode(deserializer);
         let mut var_favorites = <i64>::sse_decode(deserializer);
         let mut var_unread = <i64>::sse_decode(deserializer);
+        let mut var_unchecked = <i64>::sse_decode(deserializer);
         let mut var_active = <i64>::sse_decode(deserializer);
         let mut var_changed = <i64>::sse_decode(deserializer);
         let mut var_redirected = <i64>::sse_decode(deserializer);
@@ -767,10 +825,23 @@ impl SseDecode for crate::api::vault_api::StatsView {
             total: var_total,
             favorites: var_favorites,
             unread: var_unread,
+            unchecked: var_unchecked,
             active: var_active,
             changed: var_changed,
             redirected: var_redirected,
             dead: var_dead,
+        };
+    }
+}
+
+impl SseDecode for crate::api::vault_api::TagCountView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_count = <i64>::sse_decode(deserializer);
+        return crate::api::vault_api::TagCountView {
+            name: var_name,
+            count: var_count,
         };
     }
 }
@@ -810,14 +881,15 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__api__vault_api__get_pref_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__vault_api__init_app_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__vault_api__list_saves_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__vault_api__map_data_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__vault_api__open_vault_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__vault_api__set_favorite_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__vault_api__set_pref_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__vault_api__set_read_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__vault_api__set_tags_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__vault_api__update_save_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__vault_api__vault_stats_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__vault_api__list_tags_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__vault_api__map_data_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__vault_api__open_vault_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__vault_api__set_favorite_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__vault_api__set_pref_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__vault_api__set_read_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__vault_api__set_tags_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__vault_api__update_save_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__vault_api__vault_stats_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -927,6 +999,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::vault_api::StatsView {
             self.total.into_into_dart().into_dart(),
             self.favorites.into_into_dart().into_dart(),
             self.unread.into_into_dart().into_dart(),
+            self.unchecked.into_into_dart().into_dart(),
             self.active.into_into_dart().into_dart(),
             self.changed.into_into_dart().into_dart(),
             self.redirected.into_into_dart().into_dart(),
@@ -943,6 +1016,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::vault_api::StatsView>
     for crate::api::vault_api::StatsView
 {
     fn into_into_dart(self) -> crate::api::vault_api::StatsView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vault_api::TagCountView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vault_api::TagCountView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vault_api::TagCountView>
+    for crate::api::vault_api::TagCountView
+{
+    fn into_into_dart(self) -> crate::api::vault_api::TagCountView {
         self
     }
 }
@@ -1021,6 +1115,16 @@ impl SseEncode for Vec<crate::api::vault_api::SaveView> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::vault_api::SaveView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::vault_api::TagCountView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::vault_api::TagCountView>::sse_encode(item, serializer);
         }
     }
 }
@@ -1104,10 +1208,19 @@ impl SseEncode for crate::api::vault_api::StatsView {
         <i64>::sse_encode(self.total, serializer);
         <i64>::sse_encode(self.favorites, serializer);
         <i64>::sse_encode(self.unread, serializer);
+        <i64>::sse_encode(self.unchecked, serializer);
         <i64>::sse_encode(self.active, serializer);
         <i64>::sse_encode(self.changed, serializer);
         <i64>::sse_encode(self.redirected, serializer);
         <i64>::sse_encode(self.dead, serializer);
+    }
+}
+
+impl SseEncode for crate::api::vault_api::TagCountView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <i64>::sse_encode(self.count, serializer);
     }
 }
 

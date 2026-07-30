@@ -18,9 +18,30 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 Future<String> openVault({required String path}) =>
     RustLib.instance.api.crateApiVaultApiOpenVault(path: path);
 
-/// Saves matching an optional full-text query, newest first.
-Future<List<SaveView>> listSaves({String? query, PlatformInt64? limit}) =>
-    RustLib.instance.api.crateApiVaultApiListSaves(query: query, limit: limit);
+/// Saves matching the sidebar's filters, newest first.
+///
+/// Every filter combines with AND, and all of them are applied in SQL rather
+/// than by filtering a full list in Dart — on a 10k-save vault the difference
+/// is a windowed index scan versus shipping every row across the bridge.
+Future<List<SaveView>> listSaves({
+  String? query,
+  String? tag,
+  String? status,
+  required bool favoritesOnly,
+  required bool unreadOnly,
+  PlatformInt64? limit,
+}) => RustLib.instance.api.crateApiVaultApiListSaves(
+  query: query,
+  tag: tag,
+  status: status,
+  favoritesOnly: favoritesOnly,
+  unreadOnly: unreadOnly,
+  limit: limit,
+);
+
+/// Every tag in use, with counts, most-used first.
+Future<List<TagCountView>> listTags() =>
+    RustLib.instance.api.crateApiVaultApiListTags();
 
 Future<StatsView> vaultStats() =>
     RustLib.instance.api.crateApiVaultApiVaultStats();
@@ -269,6 +290,7 @@ class StatsView {
   final PlatformInt64 total;
   final PlatformInt64 favorites;
   final PlatformInt64 unread;
+  final PlatformInt64 unchecked;
   final PlatformInt64 active;
   final PlatformInt64 changed;
   final PlatformInt64 redirected;
@@ -278,6 +300,7 @@ class StatsView {
     required this.total,
     required this.favorites,
     required this.unread,
+    required this.unchecked,
     required this.active,
     required this.changed,
     required this.redirected,
@@ -289,6 +312,7 @@ class StatsView {
       total.hashCode ^
       favorites.hashCode ^
       unread.hashCode ^
+      unchecked.hashCode ^
       active.hashCode ^
       changed.hashCode ^
       redirected.hashCode ^
@@ -302,8 +326,28 @@ class StatsView {
           total == other.total &&
           favorites == other.favorites &&
           unread == other.unread &&
+          unchecked == other.unchecked &&
           active == other.active &&
           changed == other.changed &&
           redirected == other.redirected &&
           dead == other.dead;
+}
+
+/// A tag and how many saves carry it, for the sidebar.
+class TagCountView {
+  final String name;
+  final PlatformInt64 count;
+
+  const TagCountView({required this.name, required this.count});
+
+  @override
+  int get hashCode => name.hashCode ^ count.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TagCountView &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          count == other.count;
 }

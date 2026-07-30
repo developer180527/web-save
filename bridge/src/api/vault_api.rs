@@ -70,6 +70,7 @@ pub struct StatsView {
     pub total: i64,
     pub favorites: i64,
     pub unread: i64,
+    pub unchecked: i64,
     pub active: i64,
     pub changed: i64,
     pub redirected: i64,
@@ -95,16 +96,52 @@ fn vault() -> Result<&'static Arc<Vault>, String> {
     VAULT.get().ok_or_else(|| "vault not opened".to_string())
 }
 
-/// Saves matching an optional full-text query, newest first.
-pub fn list_saves(query: Option<String>, limit: Option<i64>) -> Result<Vec<SaveView>, String> {
+/// A tag and how many saves carry it, for the sidebar.
+pub struct TagCountView {
+    pub name: String,
+    pub count: i64,
+}
+
+/// Saves matching the sidebar's filters, newest first.
+///
+/// Every filter combines with AND, and all of them are applied in SQL rather
+/// than by filtering a full list in Dart — on a 10k-save vault the difference
+/// is a windowed index scan versus shipping every row across the bridge.
+pub fn list_saves(
+    query: Option<String>,
+    tag: Option<String>,
+    status: Option<String>,
+    favorites_only: bool,
+    unread_only: bool,
+    limit: Option<i64>,
+) -> Result<Vec<SaveView>, String> {
     let saves = vault()?
         .list_saves(&ListQuery {
             query: query.filter(|q| !q.trim().is_empty()),
+            tag: tag.filter(|t| !t.is_empty()),
+            status: status
+                .filter(|s| !s.is_empty())
+                .map(|s| websave_core::LinkStatus::parse(&s)),
+            favorites_only,
+            unread_only,
             limit,
-            ..Default::default()
+            offset: None,
         })
         .map_err(|e| e.to_string())?;
     Ok(saves.into_iter().map(SaveView::from).collect())
+}
+
+/// Every tag in use, with counts, most-used first.
+pub fn list_tags() -> Result<Vec<TagCountView>, String> {
+    Ok(vault()?
+        .list_tags()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|t| TagCountView {
+            name: t.name,
+            count: t.count,
+        })
+        .collect())
 }
 
 pub fn vault_stats() -> Result<StatsView, String> {
@@ -113,6 +150,7 @@ pub fn vault_stats() -> Result<StatsView, String> {
         total: s.total,
         favorites: s.favorites,
         unread: s.unread,
+        unchecked: s.unchecked,
         active: s.active,
         changed: s.changed,
         redirected: s.redirected,

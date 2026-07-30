@@ -9,31 +9,33 @@ import 'package:flutter/material.dart';
 import '../shell/layout_scope.dart';
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
+import 'save_card.dart';
 import 'save_detail.dart';
 import 'save_row.dart';
 import 'saves_controller.dart';
 
 class SavesScreen extends StatefulWidget {
-  const SavesScreen({super.key});
+  const SavesScreen({super.key, required this.controller});
+
+  final SavesController controller;
 
   @override
   State<SavesScreen> createState() => _SavesScreenState();
 }
 
 class _SavesScreenState extends State<SavesScreen> {
-  final _controller = SavesController();
+  SavesController get _controller => widget.controller;
 
   @override
   void initState() {
     super.initState();
-    _controller.load();
     _controller.addListener(_surfaceErrors);
   }
 
   @override
   void dispose() {
+    // Owned by HomeShell, so listen and let go — never dispose it here.
     _controller.removeListener(_surfaceErrors);
-    _controller.dispose();
     super.dispose();
   }
 
@@ -74,7 +76,7 @@ class _SavesScreenState extends State<SavesScreen> {
       builder: (context, _) {
         final list = Column(
           children: [
-            _SearchBar(onChanged: _controller.search),
+            _Header(controller: _controller),
             if (_controller.stats case final stats?) _StatsStrip(stats: stats),
             Expanded(child: _buildList(context)),
           ],
@@ -111,15 +113,43 @@ class _SavesScreenState extends State<SavesScreen> {
         child: Text('No saves matched.', style: TextStyle(color: ws.textDim)),
       );
     }
-    return ListView.builder(
-      padding: EdgeInsets.symmetric(horizontal: ws.cardPadding, vertical: 6),
+    if (!_controller.isGridView) {
+      return ListView.builder(
+        padding: EdgeInsets.symmetric(horizontal: ws.cardPadding, vertical: 6),
+        itemCount: _controller.saves.length,
+        itemBuilder: (context, i) {
+          final save = _controller.saves[i];
+          return SaveRow(
+            save: save,
+            selected: save.id == _controller.selected?.id,
+            checking: _controller.isChecking(save.id),
+            onTap: () => _open(save),
+            controller: _controller,
+          );
+        },
+      );
+    }
+
+    // A max-extent delegate rather than a fixed column count, so the grid
+    // reflows as the pane is resized without the app choosing breakpoints for
+    // it. `builder` keeps it lazy: only visible cards are ever built, which
+    // is what makes a few thousand image-bearing cards affordable.
+    return GridView.builder(
+      padding: EdgeInsets.all(ws.cardPadding),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 340,
+        mainAxisExtent: 300,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
       itemCount: _controller.saves.length,
       itemBuilder: (context, i) {
         final save = _controller.saves[i];
-        return SaveRow(
+        return SaveCard(
           save: save,
           selected: save.id == _controller.selected?.id,
           checking: _controller.isChecking(save.id),
+          thumbnailPath: _controller.thumbnailPath(save),
           onTap: () => _open(save),
           controller: _controller,
         );
@@ -128,9 +158,11 @@ class _SavesScreenState extends State<SavesScreen> {
   }
 }
 
-class _SearchBar extends StatelessWidget {
-  const _SearchBar({required this.onChanged});
-  final ValueChanged<String> onChanged;
+/// Search plus the view toggle. The React app also has Import and Add here;
+/// both are stubbed until their screens come across.
+class _Header extends StatelessWidget {
+  const _Header({required this.controller});
+  final SavesController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -148,19 +180,108 @@ class _SearchBar extends StatelessWidget {
       ),
       child: SafeArea(
         bottom: false,
-        child: SizedBox(
-          height: ws.rowHeight,
-          child: TextField(
-            onChanged: onChanged,
-            style: TextStyle(fontSize: 13.5, color: ws.text),
-            decoration: InputDecoration(
-              hintText: 'Search titles, notes, tags and archived text…',
-              hintStyle: TextStyle(color: ws.textDim, fontSize: 13.5),
-              prefixIcon: Icon(Icons.search, size: 17, color: ws.textDim),
-              prefixIconConstraints: const BoxConstraints(minWidth: 34),
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            ),
+        child: Row(
+          children: [
+            Expanded(child: _SearchBar(onChanged: controller.search)),
+            const SizedBox(width: 10),
+            _ViewToggle(controller: controller),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewToggle extends StatelessWidget {
+  const _ViewToggle({required this.controller});
+  final SavesController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    return Container(
+      height: ws.rowHeight,
+      decoration: BoxDecoration(
+        color: ws.panel,
+        border: Border.all(color: ws.border),
+        borderRadius: BorderRadius.circular(ws.controlRadius),
+      ),
+      child: Row(
+        children: [
+          _ToggleButton(
+            icon: Icons.view_list,
+            tooltip: 'List view',
+            active: !controller.isGridView,
+            onTap: () {
+              if (controller.isGridView) controller.toggleView();
+            },
           ),
+          _ToggleButton(
+            icon: Icons.grid_view,
+            tooltip: 'Card view',
+            active: controller.isGridView,
+            onTap: () {
+              if (!controller.isGridView) controller.toggleView();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleButton extends StatelessWidget {
+  const _ToggleButton({
+    required this.icon,
+    required this.tooltip,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 36,
+          height: double.infinity,
+          decoration: BoxDecoration(
+            color: active ? ws.states.selected : Colors.transparent,
+            borderRadius: BorderRadius.circular(ws.controlRadius - 1),
+          ),
+          child: Icon(icon, size: 16, color: active ? ws.text : ws.textDim),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({required this.onChanged});
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    return SizedBox(
+      height: ws.rowHeight,
+      child: TextField(
+        onChanged: onChanged,
+        style: TextStyle(fontSize: 13.5, color: ws.text),
+        decoration: InputDecoration(
+          hintText: 'Search titles, notes, tags and archived text…',
+          hintStyle: TextStyle(color: ws.textDim, fontSize: 13.5),
+          prefixIcon: Icon(Icons.search, size: 17, color: ws.textDim),
+          prefixIconConstraints: const BoxConstraints(minWidth: 34),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
         ),
       ),
     );

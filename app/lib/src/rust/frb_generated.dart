@@ -66,7 +66,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 1330724097;
+  int get rustContentHash => 1047785156;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -92,8 +92,14 @@ abstract class RustLibApi extends BaseApi {
 
   Future<List<SaveView>> crateApiVaultApiListSaves({
     String? query,
+    String? tag,
+    String? status,
+    required bool favoritesOnly,
+    required bool unreadOnly,
     PlatformInt64? limit,
   });
+
+  Future<List<TagCountView>> crateApiVaultApiListTags();
 
   Future<MapData> crateApiVaultApiMapData();
 
@@ -306,6 +312,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<List<SaveView>> crateApiVaultApiListSaves({
     String? query,
+    String? tag,
+    String? status,
+    required bool favoritesOnly,
+    required bool unreadOnly,
     PlatformInt64? limit,
   }) {
     return handler.executeNormal(
@@ -313,6 +323,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_opt_String(query, serializer);
+          sse_encode_opt_String(tag, serializer);
+          sse_encode_opt_String(status, serializer);
+          sse_encode_bool(favoritesOnly, serializer);
+          sse_encode_bool(unreadOnly, serializer);
           sse_encode_opt_box_autoadd_i_64(limit, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -326,7 +340,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVaultApiListSavesConstMeta,
-        argValues: [query, limit],
+        argValues: [query, tag, status, favoritesOnly, unreadOnly, limit],
         apiImpl: this,
       ),
     );
@@ -334,8 +348,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiVaultApiListSavesConstMeta => const TaskConstMeta(
     debugName: "list_saves",
-    argNames: ["query", "limit"],
+    argNames: [
+      "query",
+      "tag",
+      "status",
+      "favoritesOnly",
+      "unreadOnly",
+      "limit",
+    ],
   );
+
+  @override
+  Future<List<TagCountView>> crateApiVaultApiListTags() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_tag_count_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiListTagsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiListTagsConstMeta =>
+      const TaskConstMeta(debugName: "list_tags", argNames: []);
 
   @override
   Future<MapData> crateApiVaultApiMapData() {
@@ -346,7 +394,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 9,
             port: port_,
           );
         },
@@ -374,7 +422,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 10,
             port: port_,
           );
         },
@@ -406,7 +454,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -441,7 +489,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -473,7 +521,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -505,7 +553,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 14,
             port: port_,
           );
         },
@@ -541,7 +589,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 15,
             port: port_,
           );
         },
@@ -570,7 +618,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 16,
             port: port_,
           );
         },
@@ -648,6 +696,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<SaveView> dco_decode_list_save_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_save_view).toList();
+  }
+
+  @protected
+  List<TagCountView> dco_decode_list_tag_count_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_tag_count_view).toList();
   }
 
   @protected
@@ -733,16 +787,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   StatsView dco_decode_stats_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
     return StatsView(
       total: dco_decode_i_64(arr[0]),
       favorites: dco_decode_i_64(arr[1]),
       unread: dco_decode_i_64(arr[2]),
-      active: dco_decode_i_64(arr[3]),
-      changed: dco_decode_i_64(arr[4]),
-      redirected: dco_decode_i_64(arr[5]),
-      dead: dco_decode_i_64(arr[6]),
+      unchecked: dco_decode_i_64(arr[3]),
+      active: dco_decode_i_64(arr[4]),
+      changed: dco_decode_i_64(arr[5]),
+      redirected: dco_decode_i_64(arr[6]),
+      dead: dco_decode_i_64(arr[7]),
+    );
+  }
+
+  @protected
+  TagCountView dco_decode_tag_count_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TagCountView(
+      name: dco_decode_String(arr[0]),
+      count: dco_decode_i_64(arr[1]),
     );
   }
 
@@ -842,6 +909,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <SaveView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_save_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<TagCountView> sse_decode_list_tag_count_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TagCountView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_tag_count_view(deserializer));
     }
     return ans_;
   }
@@ -959,6 +1040,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_total = sse_decode_i_64(deserializer);
     var var_favorites = sse_decode_i_64(deserializer);
     var var_unread = sse_decode_i_64(deserializer);
+    var var_unchecked = sse_decode_i_64(deserializer);
     var var_active = sse_decode_i_64(deserializer);
     var var_changed = sse_decode_i_64(deserializer);
     var var_redirected = sse_decode_i_64(deserializer);
@@ -967,11 +1049,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       total: var_total,
       favorites: var_favorites,
       unread: var_unread,
+      unchecked: var_unchecked,
       active: var_active,
       changed: var_changed,
       redirected: var_redirected,
       dead: var_dead,
     );
+  }
+
+  @protected
+  TagCountView sse_decode_tag_count_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_name = sse_decode_String(deserializer);
+    var var_count = sse_decode_i_64(deserializer);
+    return TagCountView(name: var_name, count: var_count);
   }
 
   @protected
@@ -1080,6 +1171,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_tag_count_view(
+    List<TagCountView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_tag_count_view(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_map_data(MapData self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_map_point(self.points, serializer);
@@ -1160,10 +1263,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_64(self.total, serializer);
     sse_encode_i_64(self.favorites, serializer);
     sse_encode_i_64(self.unread, serializer);
+    sse_encode_i_64(self.unchecked, serializer);
     sse_encode_i_64(self.active, serializer);
     sse_encode_i_64(self.changed, serializer);
     sse_encode_i_64(self.redirected, serializer);
     sse_encode_i_64(self.dead, serializer);
+  }
+
+  @protected
+  void sse_encode_tag_count_view(TagCountView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.name, serializer);
+    sse_encode_i_64(self.count, serializer);
   }
 
   @protected

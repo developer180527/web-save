@@ -1,25 +1,25 @@
-Wire up the edit actions
+Bring the card view, sidebar filters and editing across
 
-The first writes across the bridge: star, read, check-now, delete and
-open, reachable from the detail pane, the row's hover actions and the
-long-press sheet.
+Closes most of the UI gap with the React app.
 
-Every mutation returns the save as core now holds it, and that value
-replaces the row. Nothing is guessed locally, so the UI cannot drift from
-the vault, and a 500-row list never refetches because one star changed.
+The sidebar gains its sections, the link-health filters and the tag list,
+each with counts read from the vault rather than from the loaded page --
+so a count stays true while the list is showing something else. Filtering
+happens in SQL via ListQuery rather than by filtering a fetched list in
+Dart, which is the difference between an index scan and shipping every
+row across the bridge.
 
-That needed somewhere for the list, the selection and the pending checks
-to live, so SavesController (a plain ChangeNotifier -- the whole mutable
-state is a list, a selection and two flags) replaces the FutureBuilder.
-It is what keeps the list, the detail pane and the stats strip showing
-the same save: one write moves all three.
+Card view is a lazily built grid with a max-extent delegate, and three
+things make it affordable on a real vault: cacheWidth so covers decode at
+display size rather than full resolution, a RepaintBoundary per card so
+hover does not repaint the grid, and a fixed tile extent so tiles are
+placed without measuring. Cover height is constant -- letting it flex made
+each card's image a different height and the grid read as ragged.
 
-Check-now tracks a per-row pending state rather than a global loading
-flag, so re-checking one link does not grey out the list, and the button
-disables rather than hides so it does not move under the cursor. Failed
-writes surface as a SnackBar -- a silent failure would look like a missed
-click. Delete confirms; a dead link goes to Trash with a grace period,
-but an explicit delete is immediate.
+Editing covers title, notes and tags in one dialog, sending only the
+fields that changed: core treats null as "leave alone", so an untouched
+field cannot overwrite what the extension wrote meanwhile.
 
-Open launches the system browser rather than an in-app view: the user's
-session, extensions and blockers live there.
+Adds the ios, android, windows and linux platform folders. The bridge
+crate is confirmed to cross-compile for aarch64-apple-ios; linking it
+into the Xcode target is still to do.

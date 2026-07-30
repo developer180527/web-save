@@ -18,11 +18,44 @@ import 'package:flutter/foundation.dart';
 
 import '../src/rust/api/vault_api.dart';
 
+/// What the sidebar is currently narrowed to. Mirrors the React app's
+/// sections: everything, the Inbox, favourites, or one link-health state.
+enum SaveFilter {
+  all,
+  inbox,
+  favorites,
+  active,
+  changed,
+  redirected,
+  dead,
+  unchecked,
+}
+
+extension SaveFilterQuery on SaveFilter {
+  /// The `status` value core understands, or null when this filter is not
+  /// about link health.
+  String? get status => switch (this) {
+    SaveFilter.active => 'active',
+    SaveFilter.changed => 'changed',
+    SaveFilter.redirected => 'redirected',
+    SaveFilter.dead => 'dead',
+    SaveFilter.unchecked => 'unchecked',
+    _ => null,
+  };
+
+  bool get favoritesOnly => this == SaveFilter.favorites;
+  bool get unreadOnly => this == SaveFilter.inbox;
+}
+
 class SavesController extends ChangeNotifier {
   List<SaveView> _saves = const [];
+  List<TagCountView> _tags = const [];
   StatsView? _stats;
   SaveView? _selected;
   String _query = '';
+  SaveFilter _filter = SaveFilter.all;
+  String? _tag;
+  bool _gridView = true;
   bool _loading = true;
   String? _error;
 
@@ -30,7 +63,19 @@ class SavesController extends ChangeNotifier {
   /// whole list going into a loading state.
   final Set<int> _checking = <int>{};
 
+  /// Absolute path of the vault's assets directory. Thumbnails are stored as
+  /// paths relative to it, so the grid needs it to build a File.
+  String? _thumbnailRoot;
+  String? thumbnailPath(SaveView save) =>
+      (save.thumbnail.isEmpty || _thumbnailRoot == null)
+      ? null
+      : '$_thumbnailRoot/${save.thumbnail}';
+
   List<SaveView> get saves => _saves;
+  List<TagCountView> get tags => _tags;
+  SaveFilter get filter => _filter;
+  String? get activeTag => _tag;
+  bool get isGridView => _gridView;
   StatsView? get stats => _stats;
   SaveView? get selected => _selected;
   String get query => _query;
@@ -44,11 +89,21 @@ class SavesController extends ChangeNotifier {
     notifyListeners();
     try {
       final results = await Future.wait([
-        listSaves(query: _query.isEmpty ? null : _query, limit: 500),
+        listSaves(
+          query: _query.isEmpty ? null : _query,
+          tag: _tag,
+          status: _filter.status,
+          favoritesOnly: _filter.favoritesOnly,
+          unreadOnly: _filter.unreadOnly,
+          limit: 2000,
+        ),
         vaultStats(),
+        listTags(),
       ]);
       _saves = results[0] as List<SaveView>;
       _stats = results[1] as StatsView;
+      _tags = results[2] as List<TagCountView>;
+      _thumbnailRoot ??= await assetsDir();
       // A save can fall out of the result set when the query changes; a
       // selection pointing at a row that is no longer listed would leave the
       // detail pane showing something the list cannot highlight.
@@ -68,6 +123,26 @@ class SavesController extends ChangeNotifier {
     return load();
   }
 
+  /// Picking a section clears any tag narrowing, and vice versa — two
+  /// simultaneous narrowings with only one of them visible in the sidebar is
+  /// how people end up staring at an empty list.
+  Future<void> setFilter(SaveFilter filter) {
+    _filter = filter;
+    _tag = null;
+    return load();
+  }
+
+  Future<void> setTag(String? tag) {
+    _tag = tag;
+    _filter = SaveFilter.all;
+    return load();
+  }
+
+  void toggleView() {
+    _gridView = !_gridView;
+    notifyListeners();
+  }
+
   void select(SaveView? save) {
     _selected = save;
     notifyListeners();
@@ -81,8 +156,22 @@ class SavesController extends ChangeNotifier {
   Future<void> toggleRead(SaveView save) =>
       _apply(() => setRead(id: save.id, isRead: !save.isRead));
 
-  Future<void> rename(SaveView save, String title) =>
-      _apply(() => updateSave(id: save.id, title: title));
+  /// Patch the user-editable fields. `null` leaves a field untouched, which
+  /// is core's own convention — an unchanged field must never overwrite what
+  /// another writer put there.
+  Future<void> edit(
+    SaveView save, {
+    String? title,
+    String? description,
+    String? notes,
+  }) => _apply(
+    () => updateSave(
+      id: save.id,
+      title: title,
+      description: description,
+      notes: notes,
+    ),
+  );
 
   Future<void> setTagsFor(SaveView save, List<String> tags) =>
       _apply(() => setTags(id: save.id, tags: tags));

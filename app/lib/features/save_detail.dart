@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
+import 'edit_save_sheet.dart';
 import 'save_row.dart' show confirmDelete, openInBrowser;
 import 'saves_controller.dart';
 
@@ -50,6 +51,12 @@ class SaveDetail extends StatelessWidget {
                     height: 1.25,
                   ),
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 17),
+                color: ws.textDim,
+                tooltip: 'Edit',
+                onPressed: () => showEditSheet(context, save, controller),
               ),
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 17),

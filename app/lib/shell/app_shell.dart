@@ -29,9 +29,19 @@ class ShellDestination {
 }
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key, required this.destinations, this.trailing});
+  const AppShell({
+    super.key,
+    required this.destinations,
+    this.trailing,
+    this.sidebar,
+  });
 
   final List<ShellDestination> destinations;
+
+  /// Replaces the destination list in the expanded shell. The saves screen
+  /// supplies the real sidebar — sections, link health, tags — which needs
+  /// the controller and so cannot be built from destinations alone.
+  final Widget Function(BuildContext, int, ValueChanged<int>)? sidebar;
 
   /// Extra chrome the desktop and tablet shells show in the sidebar footer —
   /// the theme picker, vault path, that sort of thing.
@@ -70,6 +80,9 @@ class _AppShellState extends State<AppShell> {
             selected: _index,
             onSelect: _select,
             trailing: widget.trailing,
+            sidebar: widget.sidebar == null
+                ? null
+                : widget.sidebar!(context, _index, _select),
           ),
           ShellSize.medium => TabletShell(
             destinations: widget.destinations,

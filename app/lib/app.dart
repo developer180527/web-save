@@ -7,8 +7,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_theme_engine/flutter_theme_engine.dart';
 
+import 'features/saves_controller.dart';
 import 'features/saves_screen.dart';
 import 'features/settings_screen.dart';
+import 'features/vault_sidebar.dart';
 import 'shell/app_shell.dart';
 import 'theme/packs.dart';
 import 'theme/pointer_density_trigger.dart';
@@ -57,20 +59,50 @@ class WebSaveApp extends StatelessWidget {
   }
 }
 
-class HomeShell extends StatelessWidget {
+class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.vaultPath});
 
   final String vaultPath;
 
   @override
+  State<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends State<HomeShell> {
+  // Owned here rather than inside SavesScreen so the sidebar's counts,
+  // filters and tags read the same state the list does.
+  final _saves = SavesController();
+
+  @override
+  void initState() {
+    super.initState();
+    _saves.load();
+  }
+
+  @override
+  void dispose() {
+    _saves.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AppShell(
+      sidebar: (context, index, onSelect) => ListenableBuilder(
+        listenable: _saves,
+        builder: (context, _) => VaultSidebar(
+          controller: _saves,
+          trailing: const ThemeQuickPicker(),
+          // Settings is the last destination.
+          onOpenSettings: () => onSelect(2),
+        ),
+      ),
       destinations: [
         ShellDestination(
           id: 'saves',
           label: 'All Saves',
           icon: Icons.bookmark_outline,
-          builder: (_) => const SavesScreen(),
+          builder: (_) => SavesScreen(controller: _saves),
         ),
         ShellDestination(
           id: 'map',
@@ -82,7 +114,7 @@ class HomeShell extends StatelessWidget {
           id: 'settings',
           label: 'Settings',
           icon: Icons.tune,
-          builder: (_) => SettingsScreen(vaultPath: vaultPath),
+          builder: (_) => SettingsScreen(vaultPath: widget.vaultPath),
         ),
       ],
       trailing: (context) => const ThemeQuickPicker(),
