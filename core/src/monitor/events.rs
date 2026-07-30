@@ -52,6 +52,8 @@ pub struct SweepSummary {
     pub skipped: usize,
     /// Hosts whose breaker tripped.
     pub hosts_unreachable: usize,
+    /// Hosts whose serving location was resolved or refreshed this sweep.
+    pub located: usize,
     /// Stopped early by [`super::MonitorHandle::cancel`].
     pub cancelled: bool,
     /// Stopped early by [`super::MonitorConfig::max_per_sweep`] or

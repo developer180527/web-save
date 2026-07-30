@@ -29,6 +29,93 @@ Future<StatsView> vaultStats() =>
 /// `thumbnail` paths into files it can display.
 Future<String> assetsDir() => RustLib.instance.api.crateApiVaultApiAssetsDir();
 
+/// Everything the map view needs, in one call.
+Future<MapData> mapData() => RustLib.instance.api.crateApiVaultApiMapData();
+
+class MapData {
+  final List<MapPoint> points;
+
+  /// `(ISO country code, host count)`, most first. Populated even by a
+  /// country-level database, which yields no coordinates to plot.
+  final List<(String, PlatformInt64)> countries;
+
+  /// Hosts located at all, including ones with no coordinates. Lets the UI
+  /// distinguish "no database yet" from "nothing resolved yet".
+  final PlatformInt64 locatedHosts;
+
+  /// A description of the loaded database, or null when none is installed.
+  final String? database;
+
+  const MapData({
+    required this.points,
+    required this.countries,
+    required this.locatedHosts,
+    this.database,
+  });
+
+  @override
+  int get hashCode =>
+      points.hashCode ^
+      countries.hashCode ^
+      locatedHosts.hashCode ^
+      database.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapData &&
+          runtimeType == other.runtimeType &&
+          points == other.points &&
+          countries == other.countries &&
+          locatedHosts == other.locatedHosts &&
+          database == other.database;
+}
+
+/// One dot on the map: a host, where it is served from, and how much of the
+/// vault lives there.
+class MapPoint {
+  final String host;
+  final String ip;
+  final String country;
+  final String city;
+  final double latitude;
+  final double longitude;
+  final PlatformInt64 saveCount;
+
+  const MapPoint({
+    required this.host,
+    required this.ip,
+    required this.country,
+    required this.city,
+    required this.latitude,
+    required this.longitude,
+    required this.saveCount,
+  });
+
+  @override
+  int get hashCode =>
+      host.hashCode ^
+      ip.hashCode ^
+      country.hashCode ^
+      city.hashCode ^
+      latitude.hashCode ^
+      longitude.hashCode ^
+      saveCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapPoint &&
+          runtimeType == other.runtimeType &&
+          host == other.host &&
+          ip == other.ip &&
+          country == other.country &&
+          city == other.city &&
+          latitude == other.latitude &&
+          longitude == other.longitude &&
+          saveCount == other.saveCount;
+}
+
 /// A save, flattened for Dart.
 ///
 /// Mirrors [`websave_core::Save`] rather than reusing it: the Dart side wants

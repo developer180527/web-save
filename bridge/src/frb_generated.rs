@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 222650074;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1594489735;
 
 // Section: executor
 
@@ -146,6 +146,38 @@ fn wire__crate__api__vault_api__list_saves_impl(
         },
     )
 }
+fn wire__crate__api__vault_api__map_data_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "map_data",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::vault_api::map_data()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__vault_api__open_vault_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -229,6 +261,13 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for f64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -248,6 +287,18 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::api::vault_api::MapPoint> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::vault_api::MapPoint>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -255,6 +306,18 @@ impl SseDecode for Vec<u8> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<u8>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<(String, i64)> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<(String, i64)>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -269,6 +332,44 @@ impl SseDecode for Vec<crate::api::vault_api::SaveView> {
             ans_.push(<crate::api::vault_api::SaveView>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::vault_api::MapData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_points = <Vec<crate::api::vault_api::MapPoint>>::sse_decode(deserializer);
+        let mut var_countries = <Vec<(String, i64)>>::sse_decode(deserializer);
+        let mut var_locatedHosts = <i64>::sse_decode(deserializer);
+        let mut var_database = <Option<String>>::sse_decode(deserializer);
+        return crate::api::vault_api::MapData {
+            points: var_points,
+            countries: var_countries,
+            located_hosts: var_locatedHosts,
+            database: var_database,
+        };
+    }
+}
+
+impl SseDecode for crate::api::vault_api::MapPoint {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_host = <String>::sse_decode(deserializer);
+        let mut var_ip = <String>::sse_decode(deserializer);
+        let mut var_country = <String>::sse_decode(deserializer);
+        let mut var_city = <String>::sse_decode(deserializer);
+        let mut var_latitude = <f64>::sse_decode(deserializer);
+        let mut var_longitude = <f64>::sse_decode(deserializer);
+        let mut var_saveCount = <i64>::sse_decode(deserializer);
+        return crate::api::vault_api::MapPoint {
+            host: var_host,
+            ip: var_ip,
+            country: var_country,
+            city: var_city,
+            latitude: var_latitude,
+            longitude: var_longitude,
+            save_count: var_saveCount,
+        };
     }
 }
 
@@ -291,6 +392,15 @@ impl SseDecode for Option<i64> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for (String, i64) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_field0 = <String>::sse_decode(deserializer);
+        let mut var_field1 = <i64>::sse_decode(deserializer);
+        return (var_field0, var_field1);
     }
 }
 
@@ -381,8 +491,9 @@ fn pde_ffi_dispatcher_primary_impl(
         1 => wire__crate__api__vault_api__assets_dir_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__vault_api__init_app_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__vault_api__list_saves_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__vault_api__open_vault_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__vault_api__vault_stats_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__vault_api__map_data_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__vault_api__open_vault_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__vault_api__vault_stats_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -401,6 +512,55 @@ fn pde_ffi_dispatcher_sync_impl(
 
 // Section: rust2dart
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vault_api::MapData {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.points.into_into_dart().into_dart(),
+            self.countries.into_into_dart().into_dart(),
+            self.located_hosts.into_into_dart().into_dart(),
+            self.database.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vault_api::MapData
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vault_api::MapData>
+    for crate::api::vault_api::MapData
+{
+    fn into_into_dart(self) -> crate::api::vault_api::MapData {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::vault_api::MapPoint {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.host.into_into_dart().into_dart(),
+            self.ip.into_into_dart().into_dart(),
+            self.country.into_into_dart().into_dart(),
+            self.city.into_into_dart().into_dart(),
+            self.latitude.into_into_dart().into_dart(),
+            self.longitude.into_into_dart().into_dart(),
+            self.save_count.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::vault_api::MapPoint
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::vault_api::MapPoint>
+    for crate::api::vault_api::MapPoint
+{
+    fn into_into_dart(self) -> crate::api::vault_api::MapPoint {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::vault_api::SaveView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -474,6 +634,13 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for f64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
 impl SseEncode for i64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -491,12 +658,32 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::api::vault_api::MapPoint> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::vault_api::MapPoint>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <u8>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<(String, i64)> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <(String, i64)>::sse_encode(item, serializer);
         }
     }
 }
@@ -508,6 +695,29 @@ impl SseEncode for Vec<crate::api::vault_api::SaveView> {
         for item in self {
             <crate::api::vault_api::SaveView>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::vault_api::MapData {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::vault_api::MapPoint>>::sse_encode(self.points, serializer);
+        <Vec<(String, i64)>>::sse_encode(self.countries, serializer);
+        <i64>::sse_encode(self.located_hosts, serializer);
+        <Option<String>>::sse_encode(self.database, serializer);
+    }
+}
+
+impl SseEncode for crate::api::vault_api::MapPoint {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.host, serializer);
+        <String>::sse_encode(self.ip, serializer);
+        <String>::sse_encode(self.country, serializer);
+        <String>::sse_encode(self.city, serializer);
+        <f64>::sse_encode(self.latitude, serializer);
+        <f64>::sse_encode(self.longitude, serializer);
+        <i64>::sse_encode(self.save_count, serializer);
     }
 }
 
@@ -528,6 +738,14 @@ impl SseEncode for Option<i64> {
         if let Some(value) = self {
             <i64>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for (String, i64) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.0, serializer);
+        <i64>::sse_encode(self.1, serializer);
     }
 }
 

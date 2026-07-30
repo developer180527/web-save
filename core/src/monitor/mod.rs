@@ -43,11 +43,14 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use crate::geo::GeoLocator;
 use crate::models::LinkStatus;
 use crate::probe::{CheckOutcome, CheckTarget, Prober};
 use crate::vault::Vault;
 use host_circuit_breaker::HostCircuitBreaker;
 use host_grouping::{group_by_host, HostQueue};
+
+pub use host_grouping::host_key;
 use sweep_state::SweepState;
 use target_cursor::TargetCursor;
 
@@ -62,6 +65,9 @@ pub struct Monitor {
     config: MonitorConfig,
     sink: Sink,
     handle: MonitorHandle,
+    /// Optional: when present, sweeps also record where each host is served
+    /// from. Absent until the user downloads a geolocation database.
+    geo: Option<Arc<GeoLocator>>,
 }
 
 impl Monitor {
@@ -80,7 +86,14 @@ impl Monitor {
             config,
             sink: Arc::new(sink),
             handle: MonitorHandle::default(),
+            geo: None,
         }
+    }
+
+    /// Also map hosts to places as the sweep goes. See [`Monitor::locate_host`].
+    pub fn with_geolocation(mut self, locator: Arc<GeoLocator>) -> Monitor {
+        self.geo = Some(locator);
+        self
     }
 
     /// A handle that can cancel whichever sweep is currently running.
@@ -245,6 +258,8 @@ impl Monitor {
             return;
         }
 
+        self.locate_host(&group.host, state);
+
         let mut last_start: Option<Instant> = None;
         for (index, target) in group.targets.iter().enumerate() {
             if state.should_stop(&self.handle, &self.config) {
@@ -276,6 +291,47 @@ impl Monitor {
                 breaker.record_reachable(&group.host);
             }
         }
+    }
+
+    /// Record where this host is served from, if we don't already know.
+    ///
+    /// Piggybacks on the sweep because the grouping has already done the hard
+    /// part: this runs once per host, not once per link, and only for hosts
+    /// the sweep was about to contact anyway. A month-old answer is reused
+    /// rather than re-resolved, so a steady-state sweep does almost none of
+    /// this work.
+    ///
+    /// Entirely best-effort. Geolocation is a garnish; nothing about link
+    /// health may depend on it, so every failure is swallowed.
+    fn locate_host(&self, host: &str, state: &SweepState) {
+        let Some(locator) = &self.geo else { return };
+        let now = crate::now();
+        match self.vault.host_location_age(host) {
+            Ok(Some(resolved_at)) if !crate::geo::is_stale(resolved_at, now) => return,
+            Err(e) => {
+                log::debug!("geo: could not read stored location for {host}: {e}");
+                return;
+            }
+            _ => {}
+        }
+        let Some(location) = locator.locate_host(host, now) else {
+            return;
+        };
+        log::debug!(
+            "geo: {host} -> {} ({}, {})",
+            location.ip,
+            if location.city.is_empty() {
+                "?"
+            } else {
+                &location.city
+            },
+            location.country
+        );
+        if let Err(e) = self.vault.set_host_location(&location) {
+            log::debug!("geo: could not store location for {host}: {e}");
+            return;
+        }
+        state.located.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Give up on a host's remaining links for this sweep.

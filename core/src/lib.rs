@@ -29,6 +29,7 @@ pub mod capture_server;
 pub mod error;
 pub mod export;
 mod extract;
+pub mod geo;
 pub mod import;
 pub mod models;
 pub mod monitor;
@@ -38,10 +39,12 @@ mod vault;
 
 pub use capture_server::{CaptureConfig, CaptureEvent, CaptureServer, CAPTURE_ADDR};
 pub use error::{Error, Result};
+pub use geo::{GeoLocator, HostLocation, GEO_DB_FILE};
 pub use import::{ImportFormat, ImportItem, ImportReport};
 pub use models::{
     LinkStatus, ListQuery, NewSave, Save, SavePatch, SavedSearch, TagCount, VaultStats,
 };
 pub use monitor::{Monitor, MonitorConfig, MonitorEvent, MonitorHandle, SweepSummary};
 pub use probe::{check_url, CheckOutcome, CheckTarget, HASH_ALGO};
+pub(crate) use vault::now;
 pub use vault::{Vault, ASSETS_DIR, DB_FILE, THUMBS_DIR};

@@ -130,3 +130,58 @@ pub fn assets_dir() -> Result<String, String> {
 pub fn init_app() {
     flutter_rust_bridge::setup_default_user_utils();
 }
+
+// ---- map ----
+
+/// One dot on the map: a host, where it is served from, and how much of the
+/// vault lives there.
+pub struct MapPoint {
+    pub host: String,
+    pub ip: String,
+    pub country: String,
+    pub city: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub save_count: i64,
+}
+
+pub struct MapData {
+    pub points: Vec<MapPoint>,
+    /// `(ISO country code, host count)`, most first. Populated even by a
+    /// country-level database, which yields no coordinates to plot.
+    pub countries: Vec<(String, i64)>,
+    /// Hosts located at all, including ones with no coordinates. Lets the UI
+    /// distinguish "no database yet" from "nothing resolved yet".
+    pub located_hosts: i64,
+    /// A description of the loaded database, or null when none is installed.
+    pub database: Option<String>,
+}
+
+/// Everything the map view needs, in one call.
+pub fn map_data() -> Result<MapData, String> {
+    let vault = vault()?;
+    let points = vault
+        .map_points()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter_map(|p| {
+            Some(MapPoint {
+                latitude: p.latitude?,
+                longitude: p.longitude?,
+                host: p.host,
+                ip: p.ip,
+                country: p.country,
+                city: p.city,
+                save_count: p.save_count,
+            })
+        })
+        .collect();
+    Ok(MapData {
+        points,
+        countries: vault.hosts_by_country().map_err(|e| e.to_string())?,
+        located_hosts: vault.located_host_count().map_err(|e| e.to_string())?,
+        database: websave_core::GeoLocator::open_in(vault.assets_dir())
+            .ok()
+            .map(|l| l.describe()),
+    })
+}

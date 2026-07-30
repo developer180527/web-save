@@ -35,13 +35,18 @@ pub(super) fn group_by_host(targets: Vec<CheckTarget>) -> Vec<HostQueue> {
         .collect()
 }
 
-/// The identity a host is paced and circuit-broken under.
+/// The identity a host is paced, circuit-broken and geolocated under.
+///
+/// Public because it is the vault's join key too: anything grouping saves by
+/// host must use *this* function rather than reimplementing the rule, which
+/// is easy to get subtly wrong (an early SQL version of it turned
+/// `wikipedia.org` into `ikipedia.org`).
 ///
 /// Port is included because a different port is a different server. `www.` is
 /// stripped and the host lower-cased because `www.example.com` and
 /// `example.com` are, virtually always, the one machine — pacing them
 /// separately would double the rate we hit it.
-pub(super) fn host_key(url: &str) -> String {
+pub fn host_key(url: &str) -> String {
     let Ok(parsed) = url::Url::parse(url) else {
         // Unparseable URLs each get their own key rather than sharing one
         // bucket, so a handful of malformed saves aren't forced into a single

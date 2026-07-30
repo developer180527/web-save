@@ -18,6 +18,7 @@ pub(super) struct SweepState {
     pub dead: AtomicUsize,
     pub skipped: AtomicUsize,
     pub hosts_unreachable: AtomicUsize,
+    pub located: AtomicUsize,
     cancelled: AtomicBool,
     budget_exhausted: AtomicBool,
 }
@@ -32,6 +33,7 @@ impl SweepState {
             dead: AtomicUsize::new(0),
             skipped: AtomicUsize::new(0),
             hosts_unreachable: AtomicUsize::new(0),
+            located: AtomicUsize::new(0),
             cancelled: AtomicBool::new(false),
             budget_exhausted: AtomicBool::new(false),
         }
@@ -70,6 +72,7 @@ impl SweepState {
             dead: self.dead.load(Ordering::Relaxed),
             skipped: self.skipped.load(Ordering::Relaxed),
             hosts_unreachable: self.hosts_unreachable.load(Ordering::Relaxed),
+            located: self.located.load(Ordering::Relaxed),
             cancelled: self.cancelled.load(Ordering::Relaxed),
             budget_exhausted: self.budget_exhausted.load(Ordering::Relaxed),
         }

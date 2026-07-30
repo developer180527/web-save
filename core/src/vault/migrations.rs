@@ -166,6 +166,27 @@ UPDATE saves SET next_check_at = COALESCE(last_checked_at + 21600, 0);
 
 CREATE INDEX idx_saves_next_check ON saves(next_check_at);
 "#,
+    // v9: where each host is served from.
+    //
+    // Keyed by host rather than by save, because that is what the fact is
+    // about: a 10k-save vault is a few hundred hosts, so the map costs a few
+    // hundred DNS lookups rather than ten thousand. The same key the link
+    // sweep paces and circuit-breaks on (`monitor::host_grouping::host_key`).
+    //
+    // Latitude and longitude are nullable on purpose: a country-level
+    // database has no coordinates, and inventing a centroid would present a
+    // guess as a measurement. Such rows still power a per-country breakdown.
+    r#"
+CREATE TABLE host_locations (
+    host TEXT PRIMARY KEY,
+    ip TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
+    latitude REAL,
+    longitude REAL,
+    resolved_at INTEGER NOT NULL
+) WITHOUT ROWID;
+"#,
 ];
 
 pub(super) fn migrate(conn: &Connection) -> Result<()> {
@@ -245,15 +266,20 @@ mod tests {
     /// cadence — silently, and only for rows created before their first check.
     #[test]
     fn default_interval_matches_schedule() {
-        let v8 = super::MIGRATIONS
-            .last()
-            .expect("v8 migration is the newest one");
+        // Found by content rather than by position: an earlier version of
+        // this test read MIGRATIONS.last(), and started failing the moment a
+        // v9 was appended for something unrelated.
+        let declaration = "check_interval_secs INTEGER NOT NULL DEFAULT";
+        let migration = super::MIGRATIONS
+            .iter()
+            .find(|sql| sql.contains(declaration))
+            .expect("some migration declares check_interval_secs");
         assert!(
-            v8.contains(&format!(
-                "check_interval_secs INTEGER NOT NULL DEFAULT {}",
+            migration.contains(&format!(
+                "{declaration} {}",
                 crate::schedule::DEFAULT_INTERVAL_SECS
             )),
-            "v8's interval default drifted from schedule::DEFAULT_INTERVAL_SECS"
+            "the interval default drifted from schedule::DEFAULT_INTERVAL_SECS"
         );
     }
 }

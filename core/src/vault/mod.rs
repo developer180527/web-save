@@ -6,6 +6,7 @@
 //! everything it can do is implemented in a submodule named for the job:
 //!
 //! - [`saves`] — create, read, edit, delete.
+//! - [`host_locations`] — where each host is served from, for the map.
 //! - [`search`] — listing, filtering, full-text search.
 //! - [`tags`] — the tag graph and the denormalized column FTS reads.
 //! - [`link_checks`] — which saves are due, and what a check writes back.
@@ -19,6 +20,7 @@
 //! Rust allows inherent `impl` blocks anywhere in the defining crate, so each
 //! submodule adds its own methods to [`Vault`]; callers see one flat API.
 
+mod host_locations;
 mod imports;
 mod link_checks;
 mod metadata;

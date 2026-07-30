@@ -17,12 +17,16 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
 import 'package:path_provider/path_provider.dart';
 
 import 'src/rust/api/vault_api.dart';
+import 'world_map.dart';
 import 'src/rust/frb_generated.dart';
 
 /// Where the Tauri app keeps its vault, so both frontends see one dataset.
 /// SQLite is in WAL mode, so having both open at once is fine — the macOS
 /// menubar app already relies on that.
 Future<String> tauriVaultPath() async {
+  // Lets the probe be pointed at a scratch copy of the vault.
+  const override = String.fromEnvironment('WEBSAVE_VAULT');
+  if (override.isNotEmpty) return override;
   final support = await getApplicationSupportDirectory();
   final tauriDir = Directory(
     '${support.parent.path}/com.venugopal.web-save/vault',
@@ -117,6 +121,8 @@ class WebSaveProbe extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'WebSave (Flutter probe)',
+      // The banner sits exactly where the AppBar actions render.
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4C7DF0)),
         useMaterial3: true,
@@ -156,6 +162,15 @@ class _SaveListScreenState extends State<SaveListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('WebSave — Flutter probe'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.public),
+            tooltip: 'Served from',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const WorldMapScreen()),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(52),
           child: Padding(

@@ -329,6 +329,42 @@ unioned, `favorite` is sticky, and `created_at` keeps the earliest known date.
 
 ---
 
+### 3.10 Where pages are served from (`geo/`)
+
+Optional, and off until the user installs a database. Two steps, one file
+each: resolve a host to an address (`geo/dns_resolution.rs`, via the platform
+resolver so `/etc/hosts` and VPN split-horizon are honoured), then look that
+address up in an offline MaxMind-format `.mmdb` (`geo/ip_geolocation.rs`).
+Results live in a `host_locations` table (migration v9), refreshed monthly.
+
+Per **host**, never per save — the same observation that makes the link sweep
+affordable. A 10k-save vault is a few hundred hosts, and the sweep already
+groups by host (§3.6), so the lookup piggybacks on `check_host` and costs one
+DNS round trip per host per month. Entirely best-effort: nothing about link
+health depends on it.
+
+Offline is the point. An online geo-IP API would ship every host the user has
+ever bookmarked to a third party, one request at a time — precisely the
+browsing history this app exists to keep local. DB-IP Lite is the recommended
+source: free, no account, CC BY 4.0. A city database (~150 MB) yields
+coordinates; a country one (~4 MB) yields only an ISO code, and those hosts
+are counted but deliberately *not* plotted rather than invented at a centroid.
+
+Aggregation for the map counts saves per host in Rust using
+`monitor::host_key`, rather than reimplementing that rule in SQL. An earlier
+version did the latter and used `LTRIM(host, 'wW.')` to strip `www.` — LTRIM
+strips a character *set*, so `wikipedia.org` became `ikipedia.org` and silently
+counted zero saves.
+
+**What it measures.** The serving edge, not the origin. Most of a modern
+bookmark collection sits behind a CDN, and for anycast ranges the database can
+only name one of the many cities that address answers from — on a real 40-host
+vault, 17 landed on "Toronto" purely for being behind Cloudflare. The UI says
+*served from* and states the caveat inline. Resolving the hosting provider by
+ASN would turn those 17 dots into one true statement ("Cloudflare · 17 sites");
+that is the natural next step.
+
+
 ## 4. The vault on disk (portability)
 
 Because everything is one SQLite file plus an assets folder, the vault is fully
