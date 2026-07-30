@@ -38,6 +38,50 @@ Future<String?> getPref({required String key}) =>
 Future<void> setPref({required String key, required String value}) =>
     RustLib.instance.api.crateApiVaultApiSetPref(key: key, value: value);
 
+Future<SaveView> setFavorite({
+  required PlatformInt64 id,
+  required bool favorite,
+}) => RustLib.instance.api.crateApiVaultApiSetFavorite(
+  id: id,
+  favorite: favorite,
+);
+
+Future<SaveView> setRead({required PlatformInt64 id, required bool isRead}) =>
+    RustLib.instance.api.crateApiVaultApiSetRead(id: id, isRead: isRead);
+
+Future<SaveView> setTags({
+  required PlatformInt64 id,
+  required List<String> tags,
+}) => RustLib.instance.api.crateApiVaultApiSetTags(id: id, tags: tags);
+
+/// Update the user-editable metadata. `None` leaves a field alone.
+Future<SaveView> updateSave({
+  required PlatformInt64 id,
+  String? title,
+  String? description,
+  String? notes,
+}) => RustLib.instance.api.crateApiVaultApiUpdateSave(
+  id: id,
+  title: title,
+  description: description,
+  notes: notes,
+);
+
+Future<void> deleteSave({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiVaultApiDeleteSave(id: id);
+
+/// Check one link right now and return its fresh state.
+///
+/// Network-bound and can take seconds — flutter_rust_bridge runs it on a
+/// worker thread, so the Dart isolate keeps painting, but the caller still
+/// wants a pending state on the button.
+Future<SaveView> checkSaveNow({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiVaultApiCheckSaveNow(id: id);
+
+/// The readable-text snapshot the monitor archived, if there is one.
+Future<String?> archiveText({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateApiVaultApiArchiveText(id: id);
+
 class MapData {
   final List<MapPoint> points;
 

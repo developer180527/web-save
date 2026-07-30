@@ -1,27 +1,25 @@
-Add the detail pane, a custom title bar, and a platform floor for shells
+Wire up the edit actions
 
-Three things, all about the desktop feeling like a desktop.
+The first writes across the bridge: star, read, check-now, delete and
+open, reachable from the detail pane, the row's hover actions and the
+long-press sheet.
 
-The shell rule was too absolute. "Layout follows width, never platform"
-conflated how much room there is with which idioms are available: a
-bottom tab bar is a thumb idiom, so a narrowed desktop window was getting
-a phone's navigation. Shell selection is now min(what the width affords,
-what the platform offers) -- desktop floors at the icon rail, touch
-platforms keep all three. That is what keeps the iPad right, where one
-device legitimately produces all three answers depending on its window.
+Every mutation returns the save as core now holds it, and that value
+replaces the row. Nothing is guessed locally, so the UI cannot drift from
+the vault, and a 500-row list never refetches because one star changed.
 
-The title bar is drawn by the app on desktop and absent everywhere else,
-keyed off platform rather than width so an iPad at desktop width still
-gets none. It mirrors the Tauri chrome: macOS keeps its native traffic
-lights and reserves their footprint, Windows and Linux go frameless and
-draw their own controls, and close hides rather than quits so capture and
-monitoring keep running.
+That needed somewhere for the list, the selection and the pending checks
+to live, so SavesController (a plain ChangeNotifier -- the whole mutable
+state is a list, a selection and two flags) replaces the FutureBuilder.
+It is what keeps the list, the detail pane and the stats strip showing
+the same save: one write moves all three.
 
-SaveDetail serves both the desktop pane and the pushed route, with the
-pane/route decision made in one place in the list. The status badge tints
-the health colour rather than using it flat, so a dead link reads as
-information rather than an alarm.
+Check-now tracks a per-row pending state rather than a global loading
+flag, so re-checking one link does not grey out the list, and the button
+disables rather than hides so it does not move under the cursor. Failed
+writes surface as a SnackBar -- a silent failure would look like a missed
+click. Delete confirms; a dead link goes to Trash with a grace period,
+but an explicit delete is immediate.
 
-flutter_theme_engine moves from a path dependency to git, pinned -- this
-app is the package's integration test, so it should consume it the way
-any other app would.
+Open launches the system browser rather than an in-app view: the user's
+session, extensions and blockers live there.

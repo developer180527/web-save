@@ -44,6 +44,7 @@ dependencies:
       url: https://github.com/developer180527/flutter_theme_engine.git
       ref: 19b880e
   window_manager: ^0.5.2
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

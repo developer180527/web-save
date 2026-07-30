@@ -9,11 +9,19 @@ import 'package:flutter/material.dart';
 
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
+import 'save_row.dart' show confirmDelete, openInBrowser;
+import 'saves_controller.dart';
 
 class SaveDetail extends StatelessWidget {
-  const SaveDetail({super.key, required this.save, this.onClose});
+  const SaveDetail({
+    super.key,
+    required this.save,
+    required this.controller,
+    this.onClose,
+  });
 
   final SaveView save;
+  final SavesController controller;
 
   /// Supplied by the desktop pane (clears the selection). The pushed route
   /// leaves this null and relies on the back button.
@@ -42,6 +50,12 @@ class SaveDetail extends StatelessWidget {
                     height: 1.25,
                   ),
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 17),
+                color: ws.textDim,
+                tooltip: 'Delete',
+                onPressed: () => confirmDelete(context, save, controller),
               ),
               if (onClose != null)
                 IconButton(
@@ -75,7 +89,7 @@ class SaveDetail extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 20),
-          _Actions(save: save),
+          _Actions(save: save, controller: controller),
           const SizedBox(height: 20),
           Divider(color: ws.border),
           const SizedBox(height: 12),
@@ -150,27 +164,26 @@ class _TagChip extends StatelessWidget {
         border: Border.all(color: ws.border),
         borderRadius: BorderRadius.circular(99),
       ),
-      child: Text(
-        tag,
-        style: TextStyle(color: ws.textDim, fontSize: 11.5),
-      ),
+      child: Text(tag, style: TextStyle(color: ws.textDim, fontSize: 11.5)),
     );
   }
 }
 
 class _Actions extends StatelessWidget {
-  const _Actions({required this.save});
+  const _Actions({required this.save, required this.controller});
   final SaveView save;
+  final SavesController controller;
 
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;
+    final checking = controller.isChecking(save.id);
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
         FilledButton.icon(
-          onPressed: () {},
+          onPressed: () => openInBrowser(save.url),
           icon: const Icon(Icons.open_in_new, size: 15),
           label: const Text('Open'),
           style: FilledButton.styleFrom(
@@ -183,11 +196,24 @@ class _Actions extends StatelessWidget {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: () {},
+          onPressed: () => controller.toggleRead(save),
           icon: Icon(
-            save.favorite ? Icons.star : Icons.star_outline,
+            save.isRead ? Icons.mark_email_unread_outlined : Icons.done,
             size: 15,
           ),
+          label: Text(save.isRead ? 'Mark unread' : 'Mark read'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: ws.text,
+            side: BorderSide(color: ws.border),
+            minimumSize: Size(0, ws.hitTarget + 6),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(ws.controlRadius),
+            ),
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => controller.toggleFavorite(save),
+          icon: Icon(save.favorite ? Icons.star : Icons.star_outline, size: 15),
           label: Text(save.favorite ? 'Starred' : 'Star'),
           style: OutlinedButton.styleFrom(
             foregroundColor: ws.text,
@@ -199,9 +225,20 @@ class _Actions extends StatelessWidget {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.refresh, size: 15),
-          label: const Text('Check now'),
+          // Disabled while in flight rather than hidden, so the button does
+          // not move under the cursor mid-check.
+          onPressed: checking ? null : () => controller.checkNow(save),
+          icon: checking
+              ? SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    color: ws.textDim,
+                  ),
+                )
+              : const Icon(Icons.refresh, size: 15),
+          label: Text(checking ? 'Checking…' : 'Check now'),
           style: OutlinedButton.styleFrom(
             foregroundColor: ws.text,
             side: BorderSide(color: ws.border),
@@ -275,15 +312,32 @@ class _MetaRow extends StatelessWidget {
 
 /// The pushed variant, for layouts with no room for a pane.
 class SaveDetailPage extends StatelessWidget {
-  const SaveDetailPage({super.key, required this.save});
+  const SaveDetailPage({
+    super.key,
+    required this.save,
+    required this.controller,
+  });
+
   final SaveView save;
+  final SavesController controller;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.ws.background,
-      appBar: AppBar(title: const Text('Save')),
-      body: SaveDetail(save: save),
+    // Rebuilds with the controller so a write made from this route — or a
+    // check finishing — is reflected without popping back to the list.
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final current = controller.saves.firstWhere(
+          (s) => s.id == save.id,
+          orElse: () => save,
+        );
+        return Scaffold(
+          backgroundColor: context.ws.background,
+          appBar: AppBar(title: const Text('Save')),
+          body: SaveDetail(save: current, controller: controller),
+        );
+      },
     );
   }
 }

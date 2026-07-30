@@ -1,8 +1,8 @@
-// The saves list.
+// The saves list, and the one place the pane-vs-route decision is made.
 //
-// Deliberately token-only: no colour, radius or height in this file is a
-// literal. That is the property that makes a pack able to restyle the app
-// without touching a widget, and the thing to check when reviewing new UI.
+// Token-only: no colour, radius or height in this file is a literal. That is
+// what lets a theme pack restyle the app without touching a widget, and the
+// thing to check when reviewing new UI here.
 
 import 'package:flutter/material.dart';
 
@@ -11,6 +11,7 @@ import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
 import 'save_detail.dart';
 import 'save_row.dart';
+import 'saves_controller.dart';
 
 class SavesScreen extends StatefulWidget {
   const SavesScreen({super.key});
@@ -20,31 +21,47 @@ class SavesScreen extends StatefulWidget {
 }
 
 class _SavesScreenState extends State<SavesScreen> {
-  String _query = '';
-  SaveView? _selected;
-  late Future<(List<SaveView>, StatsView)> _data;
+  final _controller = SavesController();
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _controller.load();
+    _controller.addListener(_surfaceErrors);
   }
 
-  void _load() {
-    _data = Future.wait([
-      listSaves(query: _query.isEmpty ? null : _query, limit: 500),
-      vaultStats(),
-    ]).then((r) => (r[0] as List<SaveView>, r[1] as StatsView));
+  @override
+  void dispose() {
+    _controller.removeListener(_surfaceErrors);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// A failed write must never be silent — the row would simply not change
+  /// and the click would look like it missed.
+  void _surfaceErrors() {
+    final error = _controller.error;
+    if (error == null || !mounted) return;
+    _controller.clearError();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error),
+        backgroundColor: context.ws.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _open(SaveView save) {
     if (context.layout.showsDetailPane) {
-      setState(() => _selected = save);
+      _controller.select(save);
     } else {
-      // A selection that survives the pop would highlight a row with no pane
-      // to explain it, so the pushed route owns the save outright.
+      // A selection surviving the pop would highlight a row with no pane to
+      // explain it, so the pushed route owns the save outright.
       Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => SaveDetailPage(save: save)),
+        MaterialPageRoute<void>(
+          builder: (_) => SaveDetailPage(save: save, controller: _controller),
+        ),
       );
     }
   }
@@ -52,79 +69,61 @@ class _SavesScreenState extends State<SavesScreen> {
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;
-    return Column(
-      children: [
-        _SearchBar(
-          onChanged: (value) => setState(() {
-            _query = value;
-            _load();
-          }),
-        ),
-        Expanded(
-          child: FutureBuilder<(List<SaveView>, StatsView)>(
-            future: _data,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(
-                  child: Text(
-                    '${snapshot.error}',
-                    style: TextStyle(color: ws.danger),
-                  ),
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final (saves, stats) = snapshot.data!;
-              final list = Column(
-                children: [
-                  _StatsStrip(stats: stats),
-                  Expanded(
-                    child: saves.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No saves matched.',
-                              style: TextStyle(color: ws.textDim),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: ws.cardPadding,
-                              vertical: 6,
-                            ),
-                            itemCount: saves.length,
-                            itemBuilder: (context, i) => SaveRow(
-                              save: saves[i],
-                              selected: saves[i].id == _selected?.id,
-                              onTap: () => _open(saves[i]),
-                            ),
-                          ),
-                  ),
-                ],
-              );
+    return ListenableBuilder(
+      listenable: _controller,
+      builder: (context, _) {
+        final list = Column(
+          children: [
+            _SearchBar(onChanged: _controller.search),
+            if (_controller.stats case final stats?) _StatsStrip(stats: stats),
+            Expanded(child: _buildList(context)),
+          ],
+        );
 
-              // The one place the pane/route decision is made. Everything
-              // below here is the same widget either way.
-              if (!context.layout.showsDetailPane) return list;
-              return Row(
-                children: [
-                  Expanded(flex: 5, child: list),
-                  Container(width: 1, color: ws.border),
-                  Expanded(
-                    flex: 4,
-                    child: _selected == null
-                        ? _EmptyPane()
-                        : SaveDetail(
-                            save: _selected!,
-                            onClose: () => setState(() => _selected = null),
-                          ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
+        if (!context.layout.showsDetailPane) return list;
+        return Row(
+          children: [
+            Expanded(flex: 5, child: list),
+            Container(width: 1, color: ws.border),
+            Expanded(
+              flex: 4,
+              child: _controller.selected == null
+                  ? const _EmptyPane()
+                  : SaveDetail(
+                      save: _controller.selected!,
+                      controller: _controller,
+                      onClose: () => _controller.select(null),
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildList(BuildContext context) {
+    final ws = context.ws;
+    if (_controller.isLoading && _controller.saves.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_controller.saves.isEmpty) {
+      return Center(
+        child: Text('No saves matched.', style: TextStyle(color: ws.textDim)),
+      );
+    }
+    return ListView.builder(
+      padding: EdgeInsets.symmetric(horizontal: ws.cardPadding, vertical: 6),
+      itemCount: _controller.saves.length,
+      itemBuilder: (context, i) {
+        final save = _controller.saves[i];
+        return SaveRow(
+          save: save,
+          selected: save.id == _controller.selected?.id,
+          checking: _controller.isChecking(save.id),
+          onTap: () => _open(save),
+          controller: _controller,
+        );
+      },
     );
   }
 }
@@ -229,6 +228,8 @@ class _StatsStrip extends StatelessWidget {
 }
 
 class _EmptyPane extends StatelessWidget {
+  const _EmptyPane();
+
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;

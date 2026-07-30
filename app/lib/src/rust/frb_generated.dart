@@ -66,7 +66,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 974759988;
+  int get rustContentHash => 1330724097;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -78,7 +78,13 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<String?> crateApiVaultApiArchiveText({required PlatformInt64 id});
+
   Future<String> crateApiVaultApiAssetsDir();
+
+  Future<SaveView> crateApiVaultApiCheckSaveNow({required PlatformInt64 id});
+
+  Future<void> crateApiVaultApiDeleteSave({required PlatformInt64 id});
 
   Future<String?> crateApiVaultApiGetPref({required String key});
 
@@ -93,9 +99,31 @@ abstract class RustLibApi extends BaseApi {
 
   Future<String> crateApiVaultApiOpenVault({required String path});
 
+  Future<SaveView> crateApiVaultApiSetFavorite({
+    required PlatformInt64 id,
+    required bool favorite,
+  });
+
   Future<void> crateApiVaultApiSetPref({
     required String key,
     required String value,
+  });
+
+  Future<SaveView> crateApiVaultApiSetRead({
+    required PlatformInt64 id,
+    required bool isRead,
+  });
+
+  Future<SaveView> crateApiVaultApiSetTags({
+    required PlatformInt64 id,
+    required List<String> tags,
+  });
+
+  Future<SaveView> crateApiVaultApiUpdateSave({
+    required PlatformInt64 id,
+    String? title,
+    String? description,
+    String? notes,
   });
 
   Future<StatsView> crateApiVaultApiVaultStats();
@@ -110,6 +138,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<String?> crateApiVaultApiArchiveText({required PlatformInt64 id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiArchiveTextConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiArchiveTextConstMeta =>
+      const TaskConstMeta(debugName: "archive_text", argNames: ["id"]);
+
+  @override
   Future<String> crateApiVaultApiAssetsDir() {
     return handler.executeNormal(
       NormalTask(
@@ -118,7 +174,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 2,
             port: port_,
           );
         },
@@ -137,6 +193,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "assets_dir", argNames: []);
 
   @override
+  Future<SaveView> crateApiVaultApiCheckSaveNow({required PlatformInt64 id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_save_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiCheckSaveNowConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiCheckSaveNowConstMeta =>
+      const TaskConstMeta(debugName: "check_save_now", argNames: ["id"]);
+
+  @override
+  Future<void> crateApiVaultApiDeleteSave({required PlatformInt64 id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiDeleteSaveConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiDeleteSaveConstMeta =>
+      const TaskConstMeta(debugName: "delete_save", argNames: ["id"]);
+
+  @override
   Future<String?> crateApiVaultApiGetPref({required String key}) {
     return handler.executeNormal(
       NormalTask(
@@ -146,7 +258,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 5,
             port: port_,
           );
         },
@@ -173,7 +285,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 6,
             port: port_,
           );
         },
@@ -205,7 +317,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 7,
             port: port_,
           );
         },
@@ -234,7 +346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 8,
             port: port_,
           );
         },
@@ -262,7 +374,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 9,
             port: port_,
           );
         },
@@ -281,6 +393,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "open_vault", argNames: ["path"]);
 
   @override
+  Future<SaveView> crateApiVaultApiSetFavorite({
+    required PlatformInt64 id,
+    required bool favorite,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          sse_encode_bool(favorite, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_save_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiSetFavoriteConstMeta,
+        argValues: [id, favorite],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiSetFavoriteConstMeta =>
+      const TaskConstMeta(
+        debugName: "set_favorite",
+        argNames: ["id", "favorite"],
+      );
+
+  @override
   Future<void> crateApiVaultApiSetPref({
     required String key,
     required String value,
@@ -294,7 +441,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 11,
             port: port_,
           );
         },
@@ -313,6 +460,108 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "set_pref", argNames: ["key", "value"]);
 
   @override
+  Future<SaveView> crateApiVaultApiSetRead({
+    required PlatformInt64 id,
+    required bool isRead,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          sse_encode_bool(isRead, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_save_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiSetReadConstMeta,
+        argValues: [id, isRead],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiSetReadConstMeta =>
+      const TaskConstMeta(debugName: "set_read", argNames: ["id", "isRead"]);
+
+  @override
+  Future<SaveView> crateApiVaultApiSetTags({
+    required PlatformInt64 id,
+    required List<String> tags,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          sse_encode_list_String(tags, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_save_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiSetTagsConstMeta,
+        argValues: [id, tags],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiSetTagsConstMeta =>
+      const TaskConstMeta(debugName: "set_tags", argNames: ["id", "tags"]);
+
+  @override
+  Future<SaveView> crateApiVaultApiUpdateSave({
+    required PlatformInt64 id,
+    String? title,
+    String? description,
+    String? notes,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          sse_encode_opt_String(title, serializer);
+          sse_encode_opt_String(description, serializer);
+          sse_encode_opt_String(notes, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_save_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiVaultApiUpdateSaveConstMeta,
+        argValues: [id, title, description, notes],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiVaultApiUpdateSaveConstMeta => const TaskConstMeta(
+    debugName: "update_save",
+    argNames: ["id", "title", "description", "notes"],
+  );
+
+  @override
   Future<StatsView> crateApiVaultApiVaultStats() {
     return handler.executeNormal(
       NormalTask(
@@ -321,7 +570,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 15,
             port: port_,
           );
         },

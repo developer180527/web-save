@@ -211,3 +211,72 @@ pub fn get_pref(key: String) -> Result<Option<String>, String> {
 pub fn set_pref(key: String, value: String) -> Result<(), String> {
     vault()?.set_meta(&key, &value).map_err(|e| e.to_string())
 }
+
+// ---- writes ----
+//
+// Every mutation returns the save as core now holds it, so the UI can replace
+// one row in place instead of refetching the list. Core stays the single
+// source of truth and Dart never has to guess what a write did.
+
+pub fn set_favorite(id: i64, favorite: bool) -> Result<SaveView, String> {
+    vault()?
+        .set_favorite(id, favorite)
+        .map(SaveView::from)
+        .map_err(|e| e.to_string())
+}
+
+pub fn set_read(id: i64, is_read: bool) -> Result<SaveView, String> {
+    vault()?
+        .set_read(id, is_read)
+        .map(SaveView::from)
+        .map_err(|e| e.to_string())
+}
+
+pub fn set_tags(id: i64, tags: Vec<String>) -> Result<SaveView, String> {
+    vault()?
+        .set_tags(id, &tags)
+        .map(SaveView::from)
+        .map_err(|e| e.to_string())
+}
+
+/// Update the user-editable metadata. `None` leaves a field alone.
+pub fn update_save(
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    notes: Option<String>,
+) -> Result<SaveView, String> {
+    vault()?
+        .update_save(
+            id,
+            websave_core::SavePatch {
+                title,
+                description,
+                notes,
+                favicon_url: None,
+            },
+        )
+        .map(SaveView::from)
+        .map_err(|e| e.to_string())
+}
+
+pub fn delete_save(id: i64) -> Result<(), String> {
+    vault()?.delete_save(id).map_err(|e| e.to_string())
+}
+
+/// Check one link right now and return its fresh state.
+///
+/// Network-bound and can take seconds — flutter_rust_bridge runs it on a
+/// worker thread, so the Dart isolate keeps painting, but the caller still
+/// wants a pending state on the button.
+pub fn check_save_now(id: i64) -> Result<SaveView, String> {
+    vault()?
+        .check_save(id)
+        .map(SaveView::from)
+        .map_err(|e| e.to_string())
+}
+
+/// The readable-text snapshot the monitor archived, if there is one.
+pub fn archive_text(id: i64) -> Result<Option<String>, String> {
+    vault()?.archive_text(id).map_err(|e| e.to_string())
+}

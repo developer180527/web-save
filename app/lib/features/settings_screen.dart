@@ -38,7 +38,8 @@ class SettingsScreen extends StatelessWidget {
         for (final pack in packs)
           _ThemeRow(
             pack: pack,
-            selected: engine.currentId == pack.id ||
+            selected:
+                engine.currentId == pack.id ||
                 engine.currentId == '${pack.id}_touch',
             onTap: () => engine.apply(pack.id),
           ),

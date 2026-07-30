@@ -13,9 +13,12 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import '../shell/layout_scope.dart';
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
+import 'saves_controller.dart';
 
 class SaveRow extends StatefulWidget {
   const SaveRow({
@@ -23,11 +26,17 @@ class SaveRow extends StatefulWidget {
     required this.save,
     required this.selected,
     required this.onTap,
+    required this.controller,
+    this.checking = false,
   });
 
   final SaveView save;
   final bool selected;
   final VoidCallback onTap;
+  final SavesController controller;
+
+  /// A link check is in flight for this row.
+  final bool checking;
 
   @override
   State<SaveRow> createState() => _SaveRowState();
@@ -56,7 +65,9 @@ class _SaveRowState extends State<SaveRow> {
       child: GestureDetector(
         onTap: widget.onTap,
         // The touch replacement for a hover-revealed row menu.
-        onLongPress: layout.showsHover ? null : () => _showActions(context),
+        // On touch the same actions live behind a long press, so nothing
+        // that hover reveals is unreachable.
+        onLongPress: () => _showActions(context),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 90),
           constraints: BoxConstraints(minHeight: ws.rowHeight + 16),
@@ -94,10 +105,33 @@ class _SaveRowState extends State<SaveRow> {
               // Only rendered where a pointer can reach them. On touch the
               // same actions live behind the long-press sheet, so nothing is
               // unreachable.
-              if (showActions) ...[
+              if (widget.checking) ...[
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    color: ws.textDim,
+                  ),
+                ),
+              ] else if (showActions) ...[
                 const SizedBox(width: 4),
-                _RowAction(icon: Icons.open_in_new, onTap: () {}),
-                _RowAction(icon: Icons.more_horiz, onTap: () {}),
+                _RowAction(
+                  icon: Icons.open_in_new,
+                  tooltip: 'Open in browser',
+                  onTap: () => openInBrowser(save.url),
+                ),
+                _RowAction(
+                  icon: save.favorite ? Icons.star : Icons.star_outline,
+                  tooltip: save.favorite ? 'Unstar' : 'Star',
+                  onTap: () => widget.controller.toggleFavorite(save),
+                ),
+                _RowAction(
+                  icon: Icons.more_horiz,
+                  tooltip: 'More',
+                  onTap: () => _showActions(context),
+                ),
               ],
             ],
           ),
@@ -108,6 +142,8 @@ class _SaveRowState extends State<SaveRow> {
 
   void _showActions(BuildContext context) {
     final ws = context.ws;
+    final save = widget.save;
+    final controller = widget.controller;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: ws.panel,
@@ -116,30 +152,112 @@ class _SaveRowState extends State<SaveRow> {
           top: Radius.circular(ws.cardRadius * 1.4),
         ),
       ),
-      builder: (context) => SafeArea(
+      builder: (sheet) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               leading: Icon(Icons.open_in_new, color: ws.textDim),
-              title: Text('Open', style: TextStyle(color: ws.text)),
-              onTap: () => Navigator.pop(context),
+              title: Text('Open in browser', style: TextStyle(color: ws.text)),
+              onTap: () {
+                Navigator.pop(sheet);
+                openInBrowser(save.url);
+              },
             ),
             ListTile(
-              leading: Icon(Icons.star_outline, color: ws.textDim),
-              title: Text('Star', style: TextStyle(color: ws.text)),
-              onTap: () => Navigator.pop(context),
+              leading: Icon(
+                save.favorite ? Icons.star : Icons.star_outline,
+                color: ws.textDim,
+              ),
+              title: Text(
+                save.favorite ? 'Unstar' : 'Star',
+                style: TextStyle(color: ws.text),
+              ),
+              onTap: () {
+                Navigator.pop(sheet);
+                controller.toggleFavorite(save);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                save.isRead ? Icons.mark_email_unread_outlined : Icons.done,
+                color: ws.textDim,
+              ),
+              title: Text(
+                save.isRead ? 'Mark unread' : 'Mark read',
+                style: TextStyle(color: ws.text),
+              ),
+              onTap: () {
+                Navigator.pop(sheet);
+                controller.toggleRead(save);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.refresh, color: ws.textDim),
+              title: Text('Check now', style: TextStyle(color: ws.text)),
+              onTap: () {
+                Navigator.pop(sheet);
+                controller.checkNow(save);
+              },
             ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: ws.danger),
               title: Text('Delete', style: TextStyle(color: ws.danger)),
-              onTap: () => Navigator.pop(context),
+              onTap: () {
+                Navigator.pop(sheet);
+                confirmDelete(context, save, controller);
+              },
             ),
           ],
         ),
       ),
     );
   }
+}
+
+/// Open a saved page in the system browser.
+///
+/// Deliberately the real browser rather than an in-app view: the user's
+/// session, extensions and blockers live there, and a bookmark manager that
+/// opens pages in a stripped-down webview is worse at the one thing it exists
+/// for.
+Future<void> openInBrowser(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+/// Deleting is the one action here that cannot be undone from the UI, so it
+/// asks. (A dead *link* goes to Trash with a grace period; an explicit delete
+/// is immediate.)
+Future<void> confirmDelete(
+  BuildContext context,
+  SaveView save,
+  SavesController controller,
+) async {
+  final ws = context.ws;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      backgroundColor: ws.panel,
+      title: Text('Delete this save?', style: TextStyle(color: ws.text)),
+      content: Text(
+        save.title.isEmpty ? save.url : save.title,
+        style: TextStyle(color: ws.textDim, fontSize: 13),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialog, false),
+          child: Text('Cancel', style: TextStyle(color: ws.textDim)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialog, true),
+          child: Text('Delete', style: TextStyle(color: ws.danger)),
+        ),
+      ],
+    ),
+  );
+  if (confirmed ?? false) await controller.remove(save);
 }
 
 class _StatusPip extends StatelessWidget {
@@ -248,9 +366,14 @@ class _Titles extends StatelessWidget {
 }
 
 class _RowAction extends StatelessWidget {
-  const _RowAction({required this.icon, required this.onTap});
+  const _RowAction({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+  });
   final IconData icon;
   final VoidCallback onTap;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -263,6 +386,7 @@ class _RowAction extends StatelessWidget {
         iconSize: 16,
         color: ws.textDim,
         icon: Icon(icon),
+        tooltip: tooltip,
         onPressed: onTap,
       ),
     );
