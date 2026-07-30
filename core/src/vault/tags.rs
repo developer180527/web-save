@@ -4,8 +4,8 @@
 //! Writes go through [`set_tags_on`] so both representations can never
 //! drift apart, and tags orphaned by their last save are cleaned up.
 
-use rusqlite::params;
 use rusqlite::Connection;
+use rusqlite::{params, OptionalExtension};
 
 use crate::error::Result;
 use crate::models::TagCount;
@@ -14,7 +14,6 @@ use super::save_rows::get_save_on;
 use super::{now, Vault};
 use crate::error::Error;
 use crate::models::Save;
-use rusqlite::OptionalExtension;
 
 pub(super) fn tags_for(conn: &Connection, id: i64) -> Result<Vec<String>> {
     let mut stmt = conn.prepare_cached(

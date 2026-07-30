@@ -2,13 +2,12 @@
 
 use std::fs;
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use crate::error::{Error, Result};
 use crate::probe;
 
 use super::{Vault, ASSETS_DIR};
-use rusqlite::OptionalExtension;
 
 /// Subdirectory of the assets dir holding cached cover images.
 pub const THUMBS_DIR: &str = "thumbs";

@@ -3,12 +3,11 @@
 //! Core attaches no meaning to the keys — it is a portable primitive the
 //! host uses for things like "when did the extension last check in".
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use crate::error::Result;
 
 use super::Vault;
-use rusqlite::OptionalExtension;
 
 impl Vault {
     pub fn get_meta(&self, key: &str) -> Result<Option<String>> {
