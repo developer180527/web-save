@@ -21,16 +21,32 @@ import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
 import 'saves_controller.dart';
 
-class TransferScreen extends StatefulWidget {
+/// Import and export as a standalone screen, for shells that route to it as
+/// a destination.
+class TransferScreen extends StatelessWidget {
   const TransferScreen({super.key, required this.controller});
 
   final SavesController controller;
 
   @override
-  State<TransferScreen> createState() => _TransferScreenState();
+  Widget build(BuildContext context) => ListView(
+    padding: EdgeInsets.all(context.ws.cardPadding * 1.5),
+    children: [TransferPanel(controller: controller)],
+  );
 }
 
-class _TransferScreenState extends State<TransferScreen> {
+/// The same controls with no scroll view or padding of its own, so Settings
+/// can place it inside a section without nesting one list inside another.
+class TransferPanel extends StatefulWidget {
+  const TransferPanel({super.key, required this.controller});
+
+  final SavesController controller;
+
+  @override
+  State<TransferPanel> createState() => _TransferPanelState();
+}
+
+class _TransferPanelState extends State<TransferPanel> {
   String? _pickedName;
   String? _pickedContent;
   ImportPreview? _preview;
@@ -122,13 +138,13 @@ class _TransferScreenState extends State<TransferScreen> {
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;
-    return ListView(
-      padding: EdgeInsets.all(ws.cardPadding * 1.5),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _Heading('Import'),
         Text(
-          'Pick a file exported from WebSave, or a bookmarks file from any '
-          'browser. Nothing is written until you confirm.',
+          'A file exported from WebSave, or a bookmarks file from any '
+          'browser.',
           style: TextStyle(color: ws.textDim, fontSize: 12.5),
         ),
         const SizedBox(height: 12),
@@ -160,7 +176,7 @@ class _TransferScreenState extends State<TransferScreen> {
           const SizedBox(height: 12),
           _ResultCard(result: result),
         ],
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
         _Heading('Export'),
         Text(
           'HTML is the round trip: browsers read it and so does this app\'s '

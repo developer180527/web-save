@@ -28,6 +28,7 @@ class SaveCard extends StatefulWidget {
     required this.save,
     required this.selected,
     required this.onTap,
+    this.onDoubleTap,
     required this.controller,
     this.thumbnailPath,
     this.checking = false,
@@ -36,6 +37,10 @@ class SaveCard extends StatefulWidget {
   final SaveView save;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Open the link outright. Null where a double click has no meaning —
+  /// touch layouts, where the single tap already opens the save full screen.
+  final VoidCallback? onDoubleTap;
   final SavesController controller;
   final String? thumbnailPath;
   final bool checking;
@@ -67,6 +72,7 @@ class _SaveCardState extends State<SaveCard> {
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
           onTap: widget.onTap,
+          onDoubleTap: widget.onDoubleTap,
           onLongPress: () => _showActions(context),
           onSecondaryTap: () => _showActions(context),
           child: AnimatedContainer(

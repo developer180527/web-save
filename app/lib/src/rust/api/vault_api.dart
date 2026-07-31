@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `describe_format`, `vault`
+// These functions are ignored because they are not marked as `pub`: `describe_format`, `launcher`, `vault`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
 /// Open (or create) the vault at `path`. Call once at startup.
@@ -125,6 +125,26 @@ Future<ImportPreview> runImport({required String content}) =>
 /// devices. Anything that is not "json" gives HTML.
 Future<String> exportVault({required String format}) =>
     RustLib.instance.api.crateApiVaultApiExportVault(format: format);
+
+/// Whether this app is registered to start at login.
+///
+/// Reports what is actually on disk rather than a stored preference, so an
+/// entry removed in System Settings shows here as off.
+Future<bool> launchAtLogin() =>
+    RustLib.instance.api.crateApiVaultApiLaunchAtLogin();
+
+/// Register or remove the login item.
+///
+/// Returns the state read back afterwards rather than the state asked for:
+/// registration can fail quietly under sandboxing or a managed profile, and a
+/// switch that flips regardless is worse than one that refuses to move.
+Future<bool> setLaunchAtLogin({required bool enabled}) =>
+    RustLib.instance.api.crateApiVaultApiSetLaunchAtLogin(enabled: enabled);
+
+/// Whether a login item can be offered at all. False on iOS and Android, where
+/// the concept does not exist.
+Future<bool> supportsLaunchAtLogin() =>
+    RustLib.instance.api.crateApiVaultApiSupportsLaunchAtLogin();
 
 class ImportPreview {
   /// Human-readable detected format, e.g. "Browser bookmarks (HTML)".

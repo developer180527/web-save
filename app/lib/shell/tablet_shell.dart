@@ -61,7 +61,16 @@ class TabletShell extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(child: destinations[selected].builder(context)),
+          // The rail insets itself; the content pane has to do the same or it
+          // runs under the status bar. Left is already covered by the rail,
+          // and the bottom is left to the destination to spend as it likes.
+          Expanded(
+            child: SafeArea(
+              left: false,
+              bottom: false,
+              child: destinations[selected].builder(context),
+            ),
+          ),
         ],
       ),
     );

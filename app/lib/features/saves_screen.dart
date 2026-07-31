@@ -54,6 +54,16 @@ class _SavesScreenState extends State<SavesScreen> {
     );
   }
 
+  /// Double-click: hand the link to the browser and take it out of the inbox.
+  ///
+  /// Opening is what a save is *for*, so it counts as reading it. Marking is
+  /// one-way — [SavesController.markRead] rather than a toggle — because
+  /// opening the same link twice should not put it back in the inbox.
+  void _launch(SaveView save) {
+    openInBrowser(save.url);
+    _controller.markRead(save);
+  }
+
   void _open(SaveView save) {
     if (context.layout.showsDetailPane) {
       _controller.select(save);
@@ -71,31 +81,48 @@ class _SavesScreenState extends State<SavesScreen> {
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;
-    return ListenableBuilder(
-      listenable: _controller,
-      builder: (context, _) {
-        final list = Column(
-          children: [
-            _Header(controller: _controller),
-            if (_controller.stats case final stats?) _StatsStrip(stats: stats),
-            Expanded(child: _buildList(context)),
-          ],
-        );
+    // Three regions, three subscriptions. The list is the expensive one —
+    // every visible card and its thumbnail — so it must not repaint when the
+    // counts tick over or when a row is selected in the pane beside it.
+    final list = Column(
+      children: [
+        _Header(controller: _controller),
+        ValueListenableBuilder<StatsView?>(
+          valueListenable: _controller.statsView,
+          builder: (context, stats, _) => stats == null
+              ? const SizedBox.shrink()
+              : _StatsStrip(stats: stats),
+        ),
+        Expanded(
+          child: ListenableBuilder(
+            listenable: Listenable.merge([_controller, _controller.gridView]),
+            builder: (context, _) => _buildList(context),
+          ),
+        ),
+      ],
+    );
 
-        if (!context.layout.showsDetailPane) return list;
+    if (!context.layout.showsDetailPane) return list;
+
+    // The pane is only worth its width when it has something to show. It used
+    // to sit there permanently saying "Select a save", which spent nearly half
+    // the window on an instruction and left the grid two columns narrower than
+    // it needed to be.
+    return ValueListenableBuilder<SaveView?>(
+      valueListenable: _controller.selection,
+      builder: (context, selected, _) {
+        if (selected == null) return list;
         return Row(
           children: [
             Expanded(flex: 5, child: list),
             Container(width: 1, color: ws.border),
             Expanded(
               flex: 4,
-              child: _controller.selected == null
-                  ? const _EmptyPane()
-                  : SaveDetail(
-                      save: _controller.selected!,
-                      controller: _controller,
-                      onClose: () => _controller.select(null),
-                    ),
+              child: SaveDetail(
+                save: selected,
+                controller: _controller,
+                onClose: () => _controller.select(null),
+              ),
             ),
           ],
         );
@@ -124,6 +151,12 @@ class _SavesScreenState extends State<SavesScreen> {
             selected: save.id == _controller.selected?.id,
             checking: _controller.isChecking(save.id),
             onTap: () => _open(save),
+            // Only where a single click *previews* rather than navigates.
+            // On touch the tap already opens the save full screen, and a
+            // double tap there would fight the scroll gesture.
+            onDoubleTap: context.layout.showsDetailPane
+                ? () => _launch(save)
+                : null,
             controller: _controller,
           );
         },
@@ -151,6 +184,9 @@ class _SavesScreenState extends State<SavesScreen> {
           checking: _controller.isChecking(save.id),
           thumbnailPath: _controller.thumbnailPath(save),
           onTap: () => _open(save),
+          onDoubleTap: context.layout.showsDetailPane
+              ? () => _launch(save)
+              : null,
           controller: _controller,
         );
       },
@@ -196,7 +232,12 @@ class _ViewToggle extends StatelessWidget {
   final SavesController controller;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: controller.gridView,
+    builder: (context, _, _) => _build(context),
+  );
+
+  Widget _build(BuildContext context) {
     final ws = context.ws;
     return Container(
       height: ws.rowHeight,
@@ -341,28 +382,6 @@ class _StatsStrip extends StatelessWidget {
                 ),
               ],
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyPane extends StatelessWidget {
-  const _EmptyPane();
-
-  @override
-  Widget build(BuildContext context) {
-    final ws = context.ws;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.article_outlined, size: 34, color: ws.border),
-          const SizedBox(height: 10),
-          Text(
-            'Select a save',
-            style: TextStyle(color: ws.textDim, fontSize: 13),
-          ),
         ],
       ),
     );

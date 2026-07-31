@@ -26,7 +26,13 @@ class MobileShell extends StatelessWidget {
     final ws = context.ws;
     return Scaffold(
       backgroundColor: ws.background,
-      body: destinations[selected].builder(context),
+      // Insets the top only. The bottom edge belongs to the nav bar below,
+      // which does its own inset for the home indicator — insetting it here
+      // as well would float the bar above the gesture area.
+      body: SafeArea(
+        bottom: false,
+        child: destinations[selected].builder(context),
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: ws.panel,

@@ -47,15 +47,54 @@ extension SaveFilterQuery on SaveFilter {
   bool get unreadOnly => this == SaveFilter.inbox;
 }
 
+/// What the list is currently narrowed to.
+///
+/// Grouped into one value because the three move together: picking a section
+/// clears the tag, picking a tag resets the section, and both keep the query.
+@immutable
+class SaveCriteria {
+  const SaveCriteria({this.filter = SaveFilter.all, this.tag, this.query = ''});
+
+  final SaveFilter filter;
+  final String? tag;
+  final String query;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SaveCriteria &&
+      other.filter == filter &&
+      other.tag == tag &&
+      other.query == query;
+
+  @override
+  int get hashCode => Object.hash(filter, tag, query);
+}
+
 class SavesController extends ChangeNotifier {
+  /// The narrowing, published the instant a row is tapped and before any
+  /// query runs.
+  ///
+  /// Split out so the sidebar can listen to this alone. It used to rebuild
+  /// from the same notification as the grid, which meant a tap on a filter
+  /// repainted every visible card — twice, once for the loading state and
+  /// again for the results — before the highlight could move. The highlight
+  /// was always set synchronously; it just arrived inside an expensive frame.
+  final criteria = ValueNotifier<SaveCriteria>(const SaveCriteria());
+
+  /// The sidebar's counts. Changes only when the vault does, not when the
+  /// narrowing does, so it does not drag the sidebar into list rebuilds.
+  final statsView = ValueNotifier<StatsView?>(null);
+
+  /// The sidebar's tag list, on the same reasoning as [stats].
+  final tagCounts = ValueNotifier<List<TagCountView>>(const []);
+
+  /// The detail pane's subject. Selecting a row must not rebuild the grid.
+  final selection = ValueNotifier<SaveView?>(null);
+
+  /// Grid versus list. Read by the toggle and the results area only.
+  final gridView = ValueNotifier<bool>(true);
+
   List<SaveView> _saves = const [];
-  List<TagCountView> _tags = const [];
-  StatsView? _stats;
-  SaveView? _selected;
-  String _query = '';
-  SaveFilter _filter = SaveFilter.all;
-  String? _tag;
-  bool _gridView = true;
   bool _loading = true;
   String? _error;
 
@@ -72,43 +111,50 @@ class SavesController extends ChangeNotifier {
       : '$_thumbnailRoot/${save.thumbnail}';
 
   List<SaveView> get saves => _saves;
-  List<TagCountView> get tags => _tags;
-  SaveFilter get filter => _filter;
-  String? get activeTag => _tag;
-  bool get isGridView => _gridView;
-  StatsView? get stats => _stats;
-  SaveView? get selected => _selected;
-  String get query => _query;
+  StatsView? get stats => statsView.value;
+  List<TagCountView> get tags => tagCounts.value;
+  SaveFilter get filter => criteria.value.filter;
+  String? get activeTag => criteria.value.tag;
+  bool get isGridView => gridView.value;
+  SaveView? get selected => selection.value;
+  String get query => criteria.value.query;
   bool get isLoading => _loading;
   String? get error => _error;
   bool isChecking(int id) => _checking.contains(id);
 
   Future<void> load() async {
+    final current = criteria.value;
     _loading = true;
     _error = null;
     notifyListeners();
     try {
       final results = await Future.wait([
         listSaves(
-          query: _query.isEmpty ? null : _query,
-          tag: _tag,
-          status: _filter.status,
-          favoritesOnly: _filter.favoritesOnly,
-          unreadOnly: _filter.unreadOnly,
+          query: current.query.isEmpty ? null : current.query,
+          tag: current.tag,
+          status: current.filter.status,
+          favoritesOnly: current.filter.favoritesOnly,
+          unreadOnly: current.filter.unreadOnly,
           limit: 2000,
         ),
         vaultStats(),
         listTags(),
       ]);
+      // Taps outrun the vault: three rows in quick succession start three
+      // loads, and they can finish out of order. Dropping a result whose
+      // criteria are no longer current stops an older query overwriting a
+      // newer one and leaving the list disagreeing with the sidebar.
+      if (criteria.value != current) return;
       _saves = results[0] as List<SaveView>;
-      _stats = results[1] as StatsView;
-      _tags = results[2] as List<TagCountView>;
+      statsView.value = results[1] as StatsView;
+      tagCounts.value = results[2] as List<TagCountView>;
       _thumbnailRoot ??= await assetsDir();
       // A save can fall out of the result set when the query changes; a
       // selection pointing at a row that is no longer listed would leave the
       // detail pane showing something the list cannot highlight.
-      if (_selected != null && !_saves.any((s) => s.id == _selected!.id)) {
-        _selected = null;
+      final chosen = selection.value;
+      if (chosen != null && !_saves.any((s) => s.id == chosen.id)) {
+        selection.value = null;
       }
     } catch (e) {
       _error = '$e';
@@ -119,7 +165,11 @@ class SavesController extends ChangeNotifier {
   }
 
   Future<void> search(String query) {
-    _query = query;
+    criteria.value = SaveCriteria(
+      filter: criteria.value.filter,
+      tag: criteria.value.tag,
+      query: query,
+    );
     return load();
   }
 
@@ -127,26 +177,18 @@ class SavesController extends ChangeNotifier {
   /// simultaneous narrowings with only one of them visible in the sidebar is
   /// how people end up staring at an empty list.
   Future<void> setFilter(SaveFilter filter) {
-    _filter = filter;
-    _tag = null;
+    criteria.value = SaveCriteria(filter: filter, query: criteria.value.query);
     return load();
   }
 
   Future<void> setTag(String? tag) {
-    _tag = tag;
-    _filter = SaveFilter.all;
+    criteria.value = SaveCriteria(tag: tag, query: criteria.value.query);
     return load();
   }
 
-  void toggleView() {
-    _gridView = !_gridView;
-    notifyListeners();
-  }
+  void toggleView() => gridView.value = !gridView.value;
 
-  void select(SaveView? save) {
-    _selected = save;
-    notifyListeners();
-  }
+  void select(SaveView? save) => selection.value = save;
 
   // ---- writes ----
 
@@ -155,6 +197,15 @@ class SavesController extends ChangeNotifier {
 
   Future<void> toggleRead(SaveView save) =>
       _apply(() => setRead(id: save.id, isRead: !save.isRead));
+
+  /// Mark read, if it is not already.
+  ///
+  /// Separate from [toggleRead] because opening a link is not a toggle: doing
+  /// it twice should not put the save back in the inbox.
+  Future<void> markRead(SaveView save) async {
+    if (save.isRead) return;
+    await _apply(() => setRead(id: save.id, isRead: true));
+  }
 
   /// Patch the user-editable fields. `null` leaves a field untouched, which
   /// is core's own convention — an unchanged field must never overwrite what
@@ -185,7 +236,7 @@ class SavesController extends ChangeNotifier {
     try {
       _replace(await checkSaveNow(id: save.id));
       // A check can change status, so the counts move with it.
-      _stats = await vaultStats();
+      statsView.value = await vaultStats();
     } catch (e) {
       _error = '$e';
     } finally {
@@ -198,8 +249,8 @@ class SavesController extends ChangeNotifier {
     try {
       await deleteSave(id: save.id);
       _saves = _saves.where((s) => s.id != save.id).toList();
-      if (_selected?.id == save.id) _selected = null;
-      _stats = await vaultStats();
+      if (selection.value?.id == save.id) selection.value = null;
+      statsView.value = await vaultStats();
     } catch (e) {
       _error = '$e';
     }
@@ -211,7 +262,7 @@ class SavesController extends ChangeNotifier {
     try {
       _replace(await write());
       // Favourite and read counts live in stats, so they move too.
-      _stats = await vaultStats();
+      statsView.value = await vaultStats();
     } catch (e) {
       _error = '$e';
     }
@@ -222,7 +273,17 @@ class SavesController extends ChangeNotifier {
     _saves = [
       for (final save in _saves) save.id == updated.id ? updated : save,
     ];
-    if (_selected?.id == updated.id) _selected = updated;
+    if (selection.value?.id == updated.id) selection.value = updated;
+  }
+
+  @override
+  void dispose() {
+    criteria.dispose();
+    statsView.dispose();
+    tagCounts.dispose();
+    selection.dispose();
+    gridView.dispose();
+    super.dispose();
   }
 
   /// Clear a surfaced error once the UI has shown it, so the same failure is

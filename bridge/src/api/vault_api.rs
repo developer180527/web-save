@@ -390,3 +390,92 @@ pub fn export_vault(format: String) -> Result<String, String> {
         _ => websave_core::export::to_netscape_html(&saves),
     })
 }
+
+// ---- launch at login ----
+//
+// Deliberately in Rust rather than Dart. The Tauri frontend already registers
+// a login item through tauri-plugin-autostart, which wraps this same
+// auto-launch crate, so sharing the crate means both frontends write the same
+// kind of entry in the same place instead of two mechanisms disagreeing about
+// what "enabled" means. On macOS that is a LaunchAgent plist, on Windows a Run
+// key, on Linux a .desktop file in ~/.config/autostart.
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn launcher() -> Result<auto_launch::AutoLaunch, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    // On macOS the executable lives inside the bundle, but a login item has to
+    // point at the .app — registering the inner binary launches a process with
+    // no dock entry, no menu bar and no window server connection.
+    #[cfg(target_os = "macos")]
+    let target = exe
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .map(|p| p.to_path_buf())
+        .unwrap_or(exe);
+    #[cfg(not(target_os = "macos"))]
+    let target = exe;
+
+    let mut builder = auto_launch::AutoLaunchBuilder::new();
+    builder
+        .set_app_name("WebSave")
+        .set_app_path(&target.to_string_lossy());
+
+    // SMAppService, not the crate's LaunchAgent default.
+    //
+    // macOS 13 split these in two. A LaunchAgent plist registers a *background
+    // item*: it lands under Settings > General > Login Items > "Allow in the
+    // Background" and triggers the "added items that can run in the
+    // background" notification. That is right for the Tauri build, whose
+    // menubar companion is a daemon, and wrong here — this is a windowed app
+    // the user wants reopened at login, which is SMAppService's MainApp
+    // registration and shows under "Open at Login" instead.
+    #[cfg(target_os = "macos")]
+    builder.set_macos_launch_mode(auto_launch::MacOSLaunchMode::SMAppService);
+
+    builder.build().map_err(|e| e.to_string())
+}
+
+/// Whether this app is registered to start at login.
+///
+/// Reports what is actually on disk rather than a stored preference, so an
+/// entry removed in System Settings shows here as off.
+pub fn launch_at_login() -> Result<bool, String> {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        launcher()?.is_enabled().map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        Ok(false)
+    }
+}
+
+/// Register or remove the login item.
+///
+/// Returns the state read back afterwards rather than the state asked for:
+/// registration can fail quietly under sandboxing or a managed profile, and a
+/// switch that flips regardless is worse than one that refuses to move.
+pub fn set_launch_at_login(enabled: bool) -> Result<bool, String> {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        let launcher = launcher()?;
+        if enabled {
+            launcher.enable().map_err(|e| e.to_string())?;
+        } else {
+            launcher.disable().map_err(|e| e.to_string())?;
+        }
+        launcher.is_enabled().map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = enabled;
+        Ok(false)
+    }
+}
+
+/// Whether a login item can be offered at all. False on iOS and Android, where
+/// the concept does not exist.
+pub fn supports_launch_at_login() -> bool {
+    cfg!(any(target_os = "macos", target_os = "windows", target_os = "linux"))
+}

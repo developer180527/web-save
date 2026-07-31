@@ -26,6 +26,7 @@ class SaveRow extends StatefulWidget {
     required this.save,
     required this.selected,
     required this.onTap,
+    this.onDoubleTap,
     required this.controller,
     this.checking = false,
   });
@@ -33,6 +34,10 @@ class SaveRow extends StatefulWidget {
   final SaveView save;
   final bool selected;
   final VoidCallback onTap;
+
+  /// Open the link outright. Null where a double click has no meaning —
+  /// touch layouts, where the single tap already opens the save full screen.
+  final VoidCallback? onDoubleTap;
   final SavesController controller;
 
   /// A link check is in flight for this row.
@@ -64,6 +69,7 @@ class _SaveRowState extends State<SaveRow> {
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
+        onDoubleTap: widget.onDoubleTap,
         // The touch replacement for a hover-revealed row menu.
         // On touch the same actions live behind a long press, so nothing
         // that hover reveals is unreachable.

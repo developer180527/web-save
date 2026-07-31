@@ -89,8 +89,15 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return AppShell(
+      // Listens to the narrowing and the counts, not to the controller as a
+      // whole. Bound to the controller it rebuilt on every list change too,
+      // so a filter tap repainted the grid before the highlight could move.
       sidebar: (context, index, onSelect) => ListenableBuilder(
-        listenable: _saves,
+        listenable: Listenable.merge([
+          _saves.criteria,
+          _saves.statsView,
+          _saves.tagCounts,
+        ]),
         builder: (context, _) => VaultSidebar(
           controller: _saves,
           trailing: const ThemeQuickPicker(),
@@ -117,7 +124,8 @@ class _HomeShellState extends State<HomeShell> {
           id: 'settings',
           label: 'Settings',
           icon: Icons.tune,
-          builder: (_) => SettingsScreen(vaultPath: widget.vaultPath),
+          builder: (_) =>
+              SettingsScreen(vaultPath: widget.vaultPath, controller: _saves),
         ),
         ShellDestination(
           id: 'transfer',
