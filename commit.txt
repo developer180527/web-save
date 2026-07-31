@@ -1,18 +1,28 @@
-Run on iOS
+Run on iOS, and get data in and out
 
-Verified on the iPad simulator: the bridge loads through
+Verified on device and simulator: the bridge loads through
 ExternalLibrary.process(), the vault opens in the app container with all
-migrations applied, the theme engine restores its selection from that
-vault before first paint, and the shell picks the tablet layout from
-width alone.
+migrations applied, the theme engine restores its selection before first
+paint, and the shell picks its layout from width alone.
 
-build_rust_ios.sh now exports IPHONEOS_DEPLOYMENT_TARGET=13.0 to match
-the Xcode project. Without it every object in the archive is stamped with
-the SDK version, which spams a linker warning per object file and would
-stop the library running on anything older than the build machine.
+Import and export are exposed on the bridge and reachable from the
+sidebar. Import is two steps: preview_import parses the file and asks the
+vault what would happen without writing, so the count of new versus
+already-here versus unusable is visible before committing. HTML is the
+round-trip format; core's parser does not read JSON, so export defaults
+to HTML and JSON is offered as a backup rather than a transfer format.
 
-Startup was restructured to paint before initialising. main() used to
-await three things before runApp, so a step that hung rather than threw
-produced a blank screen and nothing else. Bootstrap now shows each named
-step with a timeout, so the device reports its own startup even when no
-debugger can attach.
+Filter taps in the sidebar now navigate as well as filter. The sidebar
+stays visible while Settings and Import are showing, where changing the
+filter alone updated the highlight and the counts and left the main pane
+untouched — indistinguishable from the tap being ignored.
+
+DesktopShell insets the top edge. It never needed to on desktop, where
+the custom title bar reserves it, but the same shell runs on iPad with no
+title bar and the sidebar heading landed under the status bar clock.
+
+build_rust_ios.sh pins IPHONEOS_DEPLOYMENT_TARGET to match the Xcode
+project, and sync_bridge.sh regenerates the bindings and rebuilds all
+three Rust binaries in one step. The bindings carry a content hash both
+sides check at startup, and cargo build refreshes exactly one of the
+three target

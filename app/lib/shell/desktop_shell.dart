@@ -35,37 +35,47 @@ class DesktopShell extends StatelessWidget {
     final ws = context.ws;
     return Scaffold(
       backgroundColor: ws.background,
-      body: Row(
-        children: [
-          Container(
-            width: sidebarWidth,
-            decoration: BoxDecoration(
-              color: ws.translucentChrome ? ws.panel.withValues(alpha: 0.7) : ws.panel,
-              border: Border(right: BorderSide(color: ws.border)),
+      // On desktop the custom title bar reserves the top edge, so this shell
+      // never needed insets. On iPad the same shell runs with no title bar at
+      // all, and without this the sidebar heading collides with the status
+      // bar clock. Bottom is left alone: the home indicator sits over the
+      // sidebar footer harmlessly and insetting it wastes a row.
+      body: SafeArea(
+        bottom: false,
+        child: Row(
+          children: [
+            Container(
+              width: sidebarWidth,
+              decoration: BoxDecoration(
+                color: ws.translucentChrome
+                    ? ws.panel.withValues(alpha: 0.7)
+                    : ws.panel,
+                border: Border(right: BorderSide(color: ws.border)),
+              ),
+              child:
+                  sidebar ??
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 12),
+                      for (var i = 0; i < destinations.length; i++)
+                        SidebarRow(
+                          destination: destinations[i],
+                          selected: i == selected,
+                          onTap: () => onSelect(i),
+                        ),
+                      const Spacer(),
+                      if (trailing != null)
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: trailing!(context),
+                        ),
+                    ],
+                  ),
             ),
-            child:
-                sidebar ??
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 12),
-                    for (var i = 0; i < destinations.length; i++)
-                      SidebarRow(
-                        destination: destinations[i],
-                        selected: i == selected,
-                        onTap: () => onSelect(i),
-                      ),
-                    const Spacer(),
-                    if (trailing != null)
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: trailing!(context),
-                      ),
-                  ],
-                ),
-          ),
-          Expanded(child: destinations[selected].builder(context)),
-        ],
+            Expanded(child: destinations[selected].builder(context)),
+          ],
+        ),
       ),
     );
   }
@@ -132,7 +142,9 @@ class _SidebarRowState extends State<SidebarRow> {
                     style: TextStyle(
                       color: foreground,
                       fontSize: 13.5,
-                      fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: widget.selected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                     ),
                   ),
                 ],

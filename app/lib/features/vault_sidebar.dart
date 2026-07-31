@@ -16,11 +16,30 @@ class VaultSidebar extends StatelessWidget {
     required this.controller,
     required this.trailing,
     this.onOpenSettings,
+    this.onShowSaves,
   });
 
   final SavesController controller;
   final Widget trailing;
   final VoidCallback? onOpenSettings;
+
+  /// Bring the saves list back into view.
+  ///
+  /// The sidebar is always visible, including while Settings or Import is
+  /// showing, so picking a filter has to navigate as well as filter —
+  /// otherwise the tap updates the highlight and the counts and leaves the
+  /// main pane on whatever it was, which reads as the click being ignored.
+  final VoidCallback? onShowSaves;
+
+  void _select(SaveFilter filter) {
+    controller.setFilter(filter);
+    onShowSaves?.call();
+  }
+
+  void _selectTag(String? tag) {
+    controller.setTag(tag);
+    onShowSaves?.call();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,24 +70,25 @@ class VaultSidebar extends StatelessWidget {
                 active:
                     controller.filter == SaveFilter.all &&
                     controller.activeTag == null,
-                onTap: () => controller.setFilter(SaveFilter.all),
+                onTap: () => _select(SaveFilter.all),
               ),
               _Row(
                 icon: Icons.inbox_outlined,
                 label: 'Inbox',
                 count: stats?.unread.toInt(),
                 active: controller.filter == SaveFilter.inbox,
-                onTap: () => controller.setFilter(SaveFilter.inbox),
+                onTap: () => _select(SaveFilter.inbox),
               ),
               _Row(
                 icon: Icons.star_outline,
                 label: 'Favorites',
                 count: stats?.favorites.toInt(),
                 active: controller.filter == SaveFilter.favorites,
-                onTap: () => controller.setFilter(SaveFilter.favorites),
+                onTap: () => _select(SaveFilter.favorites),
               ),
               const _SectionLabel('Link health'),
               _HealthRow(
+                onSelected: onShowSaves,
                 controller: controller,
                 filter: SaveFilter.active,
                 icon: Icons.check_circle_outline,
@@ -76,6 +96,7 @@ class VaultSidebar extends StatelessWidget {
                 count: stats?.active.toInt(),
               ),
               _HealthRow(
+                onSelected: onShowSaves,
                 controller: controller,
                 filter: SaveFilter.changed,
                 icon: Icons.change_circle_outlined,
@@ -83,6 +104,7 @@ class VaultSidebar extends StatelessWidget {
                 count: stats?.changed.toInt(),
               ),
               _HealthRow(
+                onSelected: onShowSaves,
                 controller: controller,
                 filter: SaveFilter.redirected,
                 icon: Icons.turn_right,
@@ -90,6 +112,7 @@ class VaultSidebar extends StatelessWidget {
                 count: stats?.redirected.toInt(),
               ),
               _HealthRow(
+                onSelected: onShowSaves,
                 controller: controller,
                 filter: SaveFilter.dead,
                 icon: Icons.cancel_outlined,
@@ -97,6 +120,7 @@ class VaultSidebar extends StatelessWidget {
                 count: stats?.dead.toInt(),
               ),
               _HealthRow(
+                onSelected: onShowSaves,
                 controller: controller,
                 filter: SaveFilter.unchecked,
                 icon: Icons.help_outline,
@@ -111,7 +135,7 @@ class VaultSidebar extends StatelessWidget {
                     label: tag.name,
                     count: tag.count.toInt(),
                     active: controller.activeTag == tag.name,
-                    onTap: () => controller.setTag(
+                    onTap: () => _selectTag(
                       controller.activeTag == tag.name ? null : tag.name,
                     ),
                   ),
@@ -160,6 +184,7 @@ class _HealthRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.count,
+    this.onSelected,
   });
 
   final SavesController controller;
@@ -167,6 +192,7 @@ class _HealthRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final int? count;
+  final VoidCallback? onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -176,7 +202,10 @@ class _HealthRow extends StatelessWidget {
       count: count,
       active: controller.filter == filter,
       iconColor: context.ws.health.of(filter.status ?? 'unchecked'),
-      onTap: () => controller.setFilter(filter),
+      onTap: () {
+        controller.setFilter(filter);
+        onSelected?.call();
+      },
     );
   }
 }

@@ -10,6 +10,7 @@ import 'package:flutter_theme_engine/flutter_theme_engine.dart';
 import 'features/saves_controller.dart';
 import 'features/saves_screen.dart';
 import 'features/settings_screen.dart';
+import 'features/transfer_screen.dart';
 import 'features/vault_sidebar.dart';
 import 'shell/app_shell.dart';
 import 'theme/packs.dart';
@@ -93,8 +94,10 @@ class _HomeShellState extends State<HomeShell> {
         builder: (context, _) => VaultSidebar(
           controller: _saves,
           trailing: const ThemeQuickPicker(),
-          // Settings is the last destination.
+          // Indices into `destinations` below. Settings is no longer last —
+          // Transfer sits after it — so these are pinned to position.
           onOpenSettings: () => onSelect(2),
+          onShowSaves: () => onSelect(0),
         ),
       ),
       destinations: [
@@ -115,6 +118,12 @@ class _HomeShellState extends State<HomeShell> {
           label: 'Settings',
           icon: Icons.tune,
           builder: (_) => SettingsScreen(vaultPath: widget.vaultPath),
+        ),
+        ShellDestination(
+          id: 'transfer',
+          label: 'Import & Export',
+          icon: Icons.swap_vert,
+          builder: (_) => TransferScreen(controller: _saves),
         ),
       ],
       trailing: (context) => const ThemeQuickPicker(),
@@ -143,7 +152,8 @@ class ThemeQuickPicker extends StatelessWidget {
         for (final pack in packs)
           _Swatch(
             pack: pack,
-            selected: engine.currentId == pack.id ||
+            selected:
+                engine.currentId == pack.id ||
                 engine.currentId == '${pack.id}_touch',
             onTap: () => engine.apply(pack.id),
           ),

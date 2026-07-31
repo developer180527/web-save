@@ -318,3 +318,75 @@ pub fn check_save_now(id: i64) -> Result<SaveView, String> {
 pub fn archive_text(id: i64) -> Result<Option<String>, String> {
     vault()?.archive_text(id).map_err(|e| e.to_string())
 }
+
+// ---- import / export ----
+//
+// The whole point of a portable vault: get your data out on one machine and
+// back in on another. On iOS this is the *only* way in until a Share
+// Extension exists, since nothing on a phone can reach the capture server.
+
+pub struct ImportPreview {
+    /// Human-readable detected format, e.g. "Browser bookmarks (HTML)".
+    pub format: String,
+    pub total: u32,
+    /// URLs not already in the vault.
+    pub new_items: u32,
+    /// Already present. Importing merges metadata, never overwrites.
+    pub existing: u32,
+    /// Entries with no usable http(s) URL.
+    pub invalid: u32,
+}
+
+fn describe_format(format: websave_core::ImportFormat) -> String {
+    format.label().to_string()
+}
+
+/// What importing this file *would* do, without touching the vault.
+///
+/// Separate from [`run_import`] so the UI can show a real diff — new versus
+/// already-here versus unusable — before anyone commits to it. Core's parser
+/// never fails; unreadable content simply yields zero items.
+pub fn preview_import(content: String) -> Result<ImportPreview, String> {
+    let (format, items) = websave_core::import::parse(&content);
+    let report = vault()?.preview_import(&items).map_err(|e| e.to_string())?;
+    Ok(ImportPreview {
+        format: describe_format(format),
+        total: report.total,
+        new_items: report.new,
+        existing: report.existing,
+        invalid: report.invalid,
+    })
+}
+
+/// Actually import. Existing URLs are merged, never overwritten, so importing
+/// the same file twice is safe.
+pub fn run_import(content: String) -> Result<ImportPreview, String> {
+    let (format, items) = websave_core::import::parse(&content);
+    let report = vault()?.import_items(&items).map_err(|e| e.to_string())?;
+    Ok(ImportPreview {
+        format: describe_format(format),
+        total: report.total,
+        new_items: report.new,
+        existing: report.existing,
+        invalid: report.invalid,
+    })
+}
+
+/// Serialize the whole vault.
+///
+/// `"html"` is the round-trip format: Netscape bookmarks, which both any
+/// browser *and* this app's own importer read. `"json"` carries more fields
+/// (status, timestamps, archive stamps) but the importer does not parse it —
+/// it is for backup and for other tools, not for moving a vault between
+/// devices. Anything that is not "json" gives HTML.
+pub fn export_vault(format: String) -> Result<String, String> {
+    let saves = vault()?.all_saves().map_err(|e| e.to_string())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok(match format.as_str() {
+        "json" => websave_core::export::to_json(&saves, now),
+        _ => websave_core::export::to_netscape_html(&saves),
+    })
+}

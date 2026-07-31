@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `vault`
+// These functions are ignored because they are not marked as `pub`: `describe_format`, `vault`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
 /// Open (or create) the vault at `path`. Call once at startup.
@@ -102,6 +102,71 @@ Future<SaveView> checkSaveNow({required PlatformInt64 id}) =>
 /// The readable-text snapshot the monitor archived, if there is one.
 Future<String?> archiveText({required PlatformInt64 id}) =>
     RustLib.instance.api.crateApiVaultApiArchiveText(id: id);
+
+/// What importing this file *would* do, without touching the vault.
+///
+/// Separate from [`run_import`] so the UI can show a real diff — new versus
+/// already-here versus unusable — before anyone commits to it. Core's parser
+/// never fails; unreadable content simply yields zero items.
+Future<ImportPreview> previewImport({required String content}) =>
+    RustLib.instance.api.crateApiVaultApiPreviewImport(content: content);
+
+/// Actually import. Existing URLs are merged, never overwritten, so importing
+/// the same file twice is safe.
+Future<ImportPreview> runImport({required String content}) =>
+    RustLib.instance.api.crateApiVaultApiRunImport(content: content);
+
+/// Serialize the whole vault.
+///
+/// `"html"` is the round-trip format: Netscape bookmarks, which both any
+/// browser *and* this app's own importer read. `"json"` carries more fields
+/// (status, timestamps, archive stamps) but the importer does not parse it —
+/// it is for backup and for other tools, not for moving a vault between
+/// devices. Anything that is not "json" gives HTML.
+Future<String> exportVault({required String format}) =>
+    RustLib.instance.api.crateApiVaultApiExportVault(format: format);
+
+class ImportPreview {
+  /// Human-readable detected format, e.g. "Browser bookmarks (HTML)".
+  final String format;
+  final int total;
+
+  /// URLs not already in the vault.
+  final int newItems;
+
+  /// Already present. Importing merges metadata, never overwrites.
+  final int existing;
+
+  /// Entries with no usable http(s) URL.
+  final int invalid;
+
+  const ImportPreview({
+    required this.format,
+    required this.total,
+    required this.newItems,
+    required this.existing,
+    required this.invalid,
+  });
+
+  @override
+  int get hashCode =>
+      format.hashCode ^
+      total.hashCode ^
+      newItems.hashCode ^
+      existing.hashCode ^
+      invalid.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImportPreview &&
+          runtimeType == other.runtimeType &&
+          format == other.format &&
+          total == other.total &&
+          newItems == other.newItems &&
+          existing == other.existing &&
+          invalid == other.invalid;
+}
 
 class MapData {
   final List<MapPoint> points;

@@ -178,15 +178,14 @@ class _Header extends StatelessWidget {
         color: ws.background,
         border: Border(bottom: BorderSide(color: ws.border)),
       ),
-      child: SafeArea(
-        bottom: false,
-        child: Row(
-          children: [
-            Expanded(child: _SearchBar(onChanged: controller.search)),
-            const SizedBox(width: 10),
-            _ViewToggle(controller: controller),
-          ],
-        ),
+      // No SafeArea here: the shell already inset the top, and insetting
+      // twice leaves a visible gap above the search field.
+      child: Row(
+        children: [
+          Expanded(child: _SearchBar(onChanged: controller.search)),
+          const SizedBox(width: 10),
+          _ViewToggle(controller: controller),
+        ],
       ),
     );
   }

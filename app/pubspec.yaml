@@ -45,6 +45,8 @@ dependencies:
       ref: 19b880e
   window_manager: ^0.5.2
   url_launcher: ^6.3.2
+  file_picker: ^3.0.4
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:
