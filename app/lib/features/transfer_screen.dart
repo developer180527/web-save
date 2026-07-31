@@ -12,7 +12,7 @@
 
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -60,24 +60,13 @@ class _TransferPanelState extends State<TransferPanel> {
       _result = null;
     });
     try {
-      final picked = await FilePicker.platform.pickFiles(
-        // Deliberately not restricted by extension: AirDrop and Files hand
-        // over all sorts of types, and core's parser sniffs the content
-        // anyway rather than trusting the name.
-        type: FileType.any,
-        withData: true,
-      );
-      if (picked == null || picked.files.isEmpty) return;
-      final file = picked.files.first;
-      final bytes =
-          file.bytes ??
-          (file.path == null ? null : await File(file.path!).readAsBytes());
-      if (bytes == null) {
-        setState(() => _error = 'Could not read that file.');
-        return;
-      }
-      final content = String.fromCharCodes(bytes);
+      // Deliberately unfiltered: AirDrop and Files hand over inconsistent
+      // types, and core's parser sniffs the content rather than trusting the
+      // name, so filtering by extension would mostly hide valid files.
+      final file = await openFile();
+      if (file == null) return;
       setState(() => _busy = true);
+      final content = await file.readAsString();
       final preview = await previewImport(content: content);
       setState(() {
         _pickedName = file.name;

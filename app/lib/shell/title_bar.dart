@@ -20,9 +20,12 @@ import '../theme/websave_theme.dart';
 import 'layout_scope.dart';
 
 class AppTitleBar extends StatelessWidget {
-  const AppTitleBar({super.key, this.title = 'WebSave'});
+  const AppTitleBar({super.key, this.title});
 
-  final String title;
+  /// Optional. The bar is normally nameless: the sidebar already says
+  /// WebSave a few pixels below, and repeating it spends the one strip that
+  /// has to stay draggable on a word the window frame already carries.
+  final String? title;
 
   /// Space the macOS traffic lights occupy, so the title clears them.
   /// The Tauri app insets them to (16, 13) in a 38px bar; this reserves the
@@ -51,15 +54,16 @@ class AppTitleBar extends StatelessWidget {
           child: Row(
             children: [
               SizedBox(width: isMac ? _macButtonInset : 12),
-              Text(
-                title,
-                style: TextStyle(
-                  color: ws.textDim,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.2,
+              if (title case final text?)
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: ws.textDim,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
                 ),
-              ),
               const Spacer(),
               // macOS already has its buttons; only the frameless platforms
               // need ours.

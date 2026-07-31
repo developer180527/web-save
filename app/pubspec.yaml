@@ -45,10 +45,11 @@ dependencies:
       ref: 19b880e
   window_manager: ^0.5.2
   url_launcher: ^6.3.2
-  file_picker: ^3.0.4
   share_plus: ^13.3.0
   websave_bridge:
     path: rust_builder
+  package_info_plus: ^10.2.1
+  file_selector: ^1.1.0
 
 dev_dependencies:
   flutter_test:

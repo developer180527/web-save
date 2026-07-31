@@ -146,6 +146,42 @@ Future<bool> setLaunchAtLogin({required bool enabled}) =>
 Future<bool> supportsLaunchAtLogin() =>
     RustLib.instance.api.crateApiVaultApiSupportsLaunchAtLogin();
 
+/// What the vault knows about the browser extension.
+///
+/// Read from vault meta rather than from a live socket: the capture server
+/// runs in the Tauri build, not here, and it records `ext.last_seen` and
+/// `ext.version` on every call. That makes this honest about what it is — a
+/// record of the last contact, not a live connection check — and it keeps
+/// working when the engine is running and this app is merely looking on.
+Future<ExtensionStatus> extensionStatus() =>
+    RustLib.instance.api.crateApiVaultApiExtensionStatus();
+
+class ExtensionStatus {
+  /// Last time the extension called the capture server, as a unix
+  /// timestamp. None if it has never connected.
+  final PlatformInt64? lastSeen;
+
+  /// Version it reported on that call.
+  final String? version;
+
+  /// Whether that was recent enough to call it connected.
+  final bool connected;
+
+  const ExtensionStatus({this.lastSeen, this.version, required this.connected});
+
+  @override
+  int get hashCode => lastSeen.hashCode ^ version.hashCode ^ connected.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExtensionStatus &&
+          runtimeType == other.runtimeType &&
+          lastSeen == other.lastSeen &&
+          version == other.version &&
+          connected == other.connected;
+}
+
 class ImportPreview {
   /// Human-readable detected format, e.g. "Browser bookmarks (HTML)".
   final String format;

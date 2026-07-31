@@ -12,6 +12,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_theme_engine/flutter_theme_engine.dart';
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
 import 'saves_controller.dart';
@@ -88,13 +90,22 @@ class SettingsScreen extends StatelessWidget {
             ),
           ],
         ),
-        const SettingsSection(
+        SettingsSection(
           title: 'Browser extension',
           description:
               'Saving straight from the browser, without going through the '
               'app.',
-          children: [_ExtensionPlaceholder()],
+          children: [
+            if (_isDesktop)
+              const _ExtensionStatusPanel()
+            else
+              const _NotYet(
+                'The extension talks to the capture server on a desktop, so '
+                'there is nothing to report here.',
+              ),
+          ],
         ),
+        const SettingsSection(title: 'About', children: [_AboutPanel()]),
       ],
     );
   }
@@ -177,14 +188,148 @@ class _MenubarPlaceholder extends StatelessWidget {
   );
 }
 
-class _ExtensionPlaceholder extends StatelessWidget {
-  const _ExtensionPlaceholder();
+/// What the vault records about the extension.
+///
+/// This reports the last contact, not a live socket: the capture server runs
+/// in the Tauri build, and it stamps the vault on every call. Saying
+/// "connected" off a 12-hour window is a deliberate choice — the extension
+/// only calls in when something is saved, so a shorter window would report a
+/// working setup as broken over a quiet afternoon.
+class _ExtensionStatusPanel extends StatefulWidget {
+  const _ExtensionStatusPanel();
 
   @override
-  Widget build(BuildContext context) => const _NotYet(
-    'The extension talks to the capture server on this machine. Pairing from '
-    'here is not built yet.',
-  );
+  State<_ExtensionStatusPanel> createState() => _ExtensionStatusPanelState();
+}
+
+class _ExtensionStatusPanelState extends State<_ExtensionStatusPanel> {
+  ExtensionStatus? _status;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    extensionStatus()
+        .then((v) => mounted ? setState(() => _status = v) : null)
+        .catchError((Object e) {
+          if (mounted) setState(() => _error = '$e');
+        });
+  }
+
+  String _ago(int seconds) {
+    final then = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+    final gap = DateTime.now().difference(then);
+    if (gap.inMinutes < 1) return 'just now';
+    if (gap.inHours < 1) return '${gap.inMinutes} min ago';
+    if (gap.inDays < 1) return '${gap.inHours} h ago';
+    if (gap.inDays < 30) return '${gap.inDays} d ago';
+    return '${then.year}-${then.month.toString().padLeft(2, '0')}-'
+        '${then.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error case final message?) return _NotYet(message);
+    final status = _status;
+    if (status == null) {
+      return const SizedBox(
+        height: 40,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    final ws = context.ws;
+    final never = status.lastSeen == null;
+    return Column(
+      children: [
+        SettingsRow(
+          label: 'Status',
+          detail: never
+              ? 'No capture has reached this vault yet.'
+              : status.connected
+              ? 'Saving to this vault.'
+              : 'No capture recently. The extension may be disabled, or the '
+                    'engine not running.',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: status.connected ? ws.health.active : ws.health.dead,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                status.connected ? 'Connected' : 'Not connected',
+                style: TextStyle(color: ws.text, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        SettingsRow(
+          label: 'Last capture',
+          trailing: Text(
+            never ? '—' : _ago(status.lastSeen!),
+            style: TextStyle(color: ws.textDim, fontSize: 13),
+          ),
+        ),
+        SettingsRow(
+          label: 'Extension version',
+          trailing: Text(
+            status.version ?? '—',
+            style: TextStyle(color: ws.textDim, fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// App version and build number, read from the bundle rather than hard-coded
+/// so it cannot drift from what was actually shipped.
+class _AboutPanel extends StatefulWidget {
+  const _AboutPanel();
+
+  @override
+  State<_AboutPanel> createState() => _AboutPanelState();
+}
+
+class _AboutPanelState extends State<_AboutPanel> {
+  PackageInfo? _info;
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then(
+      (v) => mounted ? setState(() => _info = v) : null,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    final info = _info;
+    return Column(
+      children: [
+        SettingsRow(
+          label: 'Version',
+          trailing: Text(
+            info?.version ?? '—',
+            style: TextStyle(color: ws.textDim, fontSize: 13),
+          ),
+        ),
+        SettingsRow(
+          label: 'Build',
+          trailing: Text(
+            info?.buildNumber ?? '—',
+            style: TextStyle(color: ws.textDim, fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _NotYet extends StatelessWidget {

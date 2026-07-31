@@ -479,3 +479,46 @@ pub fn set_launch_at_login(enabled: bool) -> Result<bool, String> {
 pub fn supports_launch_at_login() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows", target_os = "linux"))
 }
+
+// ---- browser extension ----
+
+pub struct ExtensionStatus {
+    /// Last time the extension called the capture server, as a unix
+    /// timestamp. None if it has never connected.
+    pub last_seen: Option<i64>,
+    /// Version it reported on that call.
+    pub version: Option<String>,
+    /// Whether that was recent enough to call it connected.
+    pub connected: bool,
+}
+
+/// What the vault knows about the browser extension.
+///
+/// Read from vault meta rather than from a live socket: the capture server
+/// runs in the Tauri build, not here, and it records `ext.last_seen` and
+/// `ext.version` on every call. That makes this honest about what it is — a
+/// record of the last contact, not a live connection check — and it keeps
+/// working when the engine is running and this app is merely looking on.
+pub fn extension_status() -> Result<ExtensionStatus, String> {
+    let vault = vault()?;
+    let last_seen = vault
+        .get_meta("ext.last_seen")
+        .map_err(|e| e.to_string())?
+        .and_then(|v| v.parse::<i64>().ok());
+    let version = vault.get_meta("ext.version").map_err(|e| e.to_string())?;
+
+    // Twelve hours. The extension only calls in when the user saves something,
+    // so anything shorter would report a working setup as disconnected over a
+    // quiet afternoon.
+    const RECENT: i64 = 12 * 60 * 60;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    Ok(ExtensionStatus {
+        connected: last_seen.is_some_and(|seen| now - seen < RECENT),
+        last_seen,
+        version,
+    })
+}
