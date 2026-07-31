@@ -1,5 +1,5 @@
 [package]
-name = "websave-bridge"
+name = "websave_bridge"
 version = "1.1.0"
 edition = "2021"
 description = "flutter_rust_bridge surface over websave-core, for the Flutter app."

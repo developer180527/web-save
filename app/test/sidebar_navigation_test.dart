@@ -59,7 +59,8 @@ void main() {
     expect(
       shown,
       1,
-      reason: 'the filter alone is not enough — the shell has to switch back '
+      reason:
+          'the filter alone is not enough — the shell has to switch back '
           'to the saves destination or the main pane never changes',
     );
   });
@@ -94,10 +95,7 @@ void main() {
 
     await _pump(
       tester,
-      VaultSidebar(
-        controller: controller,
-        trailing: const SizedBox.shrink(),
-      ),
+      VaultSidebar(controller: controller, trailing: const SizedBox.shrink()),
     );
 
     await tester.tap(find.text('Inbox'));

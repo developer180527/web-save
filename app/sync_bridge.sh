@@ -35,7 +35,7 @@ flutter_rust_bridge_codegen generate \
 
 if [ "$want_host" = 1 ]; then
   echo "==> building host dylib (macOS app)"
-  cargo build -p websave-bridge
+  cargo build -p websave_bridge
 fi
 
 if [ "$want_ios" = 1 ]; then

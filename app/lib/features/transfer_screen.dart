@@ -53,7 +53,8 @@ class _TransferScreenState extends State<TransferScreen> {
       );
       if (picked == null || picked.files.isEmpty) return;
       final file = picked.files.first;
-      final bytes = file.bytes ??
+      final bytes =
+          file.bytes ??
           (file.path == null ? null : await File(file.path!).readAsBytes());
       if (bytes == null) {
         setState(() => _error = 'Could not read that file.');
@@ -109,10 +110,7 @@ class _TransferScreenState extends State<TransferScreen> {
       // The system share sheet, so the file can go to Files, AirDrop, mail —
       // wherever. On desktop this saves through the same sheet.
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          text: 'WebSave export',
-        ),
+        ShareParams(files: [XFile(file.path)], text: 'WebSave export'),
       );
     } catch (e) {
       setState(() => _error = '$e');
@@ -136,15 +134,14 @@ class _TransferScreenState extends State<TransferScreen> {
         const SizedBox(height: 12),
         _Button(
           icon: Icons.folder_open,
-          label: _pickedName == null ? 'Choose a file…' : 'Choose another file…',
+          label: _pickedName == null
+              ? 'Choose a file…'
+              : 'Choose another file…',
           onTap: _busy ? null : _pick,
         ),
         if (_pickedName != null) ...[
           const SizedBox(height: 8),
-          Text(
-            _pickedName!,
-            style: TextStyle(color: ws.textDim, fontSize: 12),
-          ),
+          Text(_pickedName!, style: TextStyle(color: ws.textDim, fontSize: 12)),
         ],
         if (_preview case final preview?) ...[
           const SizedBox(height: 12),

@@ -62,14 +62,17 @@ class LinkHealthColors {
     unchecked: unchecked ?? this.unchecked,
   );
 
-  static LinkHealthColors lerp(LinkHealthColors a, LinkHealthColors b, double t) =>
-      LinkHealthColors(
-        active: Color.lerp(a.active, b.active, t)!,
-        changed: Color.lerp(a.changed, b.changed, t)!,
-        redirected: Color.lerp(a.redirected, b.redirected, t)!,
-        dead: Color.lerp(a.dead, b.dead, t)!,
-        unchecked: Color.lerp(a.unchecked, b.unchecked, t)!,
-      );
+  static LinkHealthColors lerp(
+    LinkHealthColors a,
+    LinkHealthColors b,
+    double t,
+  ) => LinkHealthColors(
+    active: Color.lerp(a.active, b.active, t)!,
+    changed: Color.lerp(a.changed, b.changed, t)!,
+    redirected: Color.lerp(a.redirected, b.redirected, t)!,
+    dead: Color.lerp(a.dead, b.dead, t)!,
+    unchecked: Color.lerp(a.unchecked, b.unchecked, t)!,
+  );
 
   Map<String, dynamic> toJson() => {
     'active': active.toARGB32(),
@@ -79,13 +82,14 @@ class LinkHealthColors {
     'unchecked': unchecked.toARGB32(),
   };
 
-  factory LinkHealthColors.fromJson(Map<String, dynamic> json) => LinkHealthColors(
-    active: Color(json['active'] as int),
-    changed: Color(json['changed'] as int),
-    redirected: Color(json['redirected'] as int),
-    dead: Color(json['dead'] as int),
-    unchecked: Color(json['unchecked'] as int),
-  );
+  factory LinkHealthColors.fromJson(Map<String, dynamic> json) =>
+      LinkHealthColors(
+        active: Color(json['active'] as int),
+        changed: Color(json['changed'] as int),
+        redirected: Color(json['redirected'] as int),
+        dead: Color(json['dead'] as int),
+        unchecked: Color(json['unchecked'] as int),
+      );
 }
 
 /// Surfaces for pointer and selection states.
@@ -113,12 +117,15 @@ class InteractionColors {
         selected: selected ?? this.selected,
       );
 
-  static InteractionColors lerp(InteractionColors a, InteractionColors b, double t) =>
-      InteractionColors(
-        hover: Color.lerp(a.hover, b.hover, t)!,
-        pressed: Color.lerp(a.pressed, b.pressed, t)!,
-        selected: Color.lerp(a.selected, b.selected, t)!,
-      );
+  static InteractionColors lerp(
+    InteractionColors a,
+    InteractionColors b,
+    double t,
+  ) => InteractionColors(
+    hover: Color.lerp(a.hover, b.hover, t)!,
+    pressed: Color.lerp(a.pressed, b.pressed, t)!,
+    selected: Color.lerp(a.selected, b.selected, t)!,
+  );
 
   Map<String, dynamic> toJson() => {
     'hover': hover.toARGB32(),
@@ -126,9 +133,10 @@ class InteractionColors {
     'selected': selected.toARGB32(),
   };
 
-  factory InteractionColors.fromJson(Map<String, dynamic> json) => InteractionColors(
-    hover: Color(json['hover'] as int),
-    pressed: Color(json['pressed'] as int),
-    selected: Color(json['selected'] as int),
-  );
+  factory InteractionColors.fromJson(Map<String, dynamic> json) =>
+      InteractionColors(
+        hover: Color(json['hover'] as int),
+        pressed: Color(json['pressed'] as int),
+        selected: Color(json['selected'] as int),
+      );
 }

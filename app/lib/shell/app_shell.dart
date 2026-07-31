@@ -102,7 +102,10 @@ class _AppShellState extends State<AppShell> {
         return LayoutScope(
           info: info,
           child: Column(
-            children: [const AppTitleBar(), Expanded(child: shell)],
+            children: [
+              const AppTitleBar(),
+              Expanded(child: shell),
+            ],
           ),
         );
       },

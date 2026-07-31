@@ -6155,14 +6155,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "websave-bridge"
-version = "1.1.0"
-dependencies = [
- "flutter_rust_bridge",
- "websave-core",
-]
-
-[[package]]
 name = "websave-core"
 version = "1.1.0"
 dependencies = [
@@ -6187,6 +6179,14 @@ version = "1.1.0"
 dependencies = [
  "thiserror 1.0.69",
  "uniffi",
+ "websave-core",
+]
+
+[[package]]
+name = "websave_bridge"
+version = "1.1.0"
+dependencies = [
+ "flutter_rust_bridge",
  "websave-core",
 ]
 

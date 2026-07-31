@@ -43,39 +43,15 @@ Future<String> vaultPath() async {
 
 /// How to reach the Rust symbols on this platform.
 ///
-/// On iOS and Android the library is linked *into* the app binary — there is
-/// no file to open, and its symbols are already in the running process. Only
-/// desktop dev builds load a dylib from disk, and only because the library is
-/// not bundled there yet.
-ExternalLibrary rustLibrary() {
-  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
-    return ExternalLibrary.process(iKnowHowToUseIt: true);
-  }
-  final path = findRustLibrary();
-  if (path == null) {
-    throw StateError(
-      'Could not find libwebsave_bridge.dylib.\n'
-      'Run `cargo build -p websave-bridge` from the repo root, or pass\n'
-      '--dart-define=WEBSAVE_DYLIB=/absolute/path/to/libwebsave_bridge.dylib',
-    );
-  }
-  return ExternalLibrary.open(path);
-}
-
-/// Locate the desktop dev build of the Rust library.
-String? findRustLibrary() {
-  const override = String.fromEnvironment('WEBSAVE_DYLIB');
-  const name = 'libwebsave_bridge.dylib';
-  final cwd = Directory.current.path;
-  final candidates = <String>[
-    if (override.isNotEmpty) override,
-    '$cwd/target/debug/$name',
-    '${Directory(cwd).parent.path}/target/debug/$name',
-    // The .app launched from Finder: walk up from the bundle.
-    '${File(Platform.resolvedExecutable).parent.parent.parent.parent.parent.parent.parent.parent.path}/target/debug/$name',
-  ];
-  return candidates.where((p) => File(p).existsSync()).firstOrNull;
-}
+/// The Rust library backing this app.
+///
+/// Cargokit compiles the crate as a static library and links it into the
+/// executable with -force_load on every platform, so by the time Dart runs
+/// the symbols are already in the process — there is no file to find and
+/// nothing to bundle separately. This replaced a loader that searched the
+/// source tree for a dylib, which only ever worked when the app was launched
+/// from inside the repo and silently picked up a stale debug build otherwise.
+ExternalLibrary rustLibrary() => ExternalLibrary.process(iKnowHowToUseIt: true);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -127,7 +103,10 @@ class _BootstrapState extends State<Bootstrap> {
         await RustLib.init(externalLibrary: rustLibrary());
       });
       final path = await _run('Finding the vault…', vaultPath);
-      final opened = await _run('Opening the vault…', () => openVault(path: path));
+      final opened = await _run(
+        'Opening the vault…',
+        () => openVault(path: path),
+      );
       // The engine reads its saved selection from the vault, so it can only
       // be built once the vault is open.
       final engine = await _run('Restoring the theme…', createThemeEngine);
@@ -200,4 +179,3 @@ class StartupFailure extends StatelessWidget {
     );
   }
 }
-

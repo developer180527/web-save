@@ -18,7 +18,7 @@ export IPHONEOS_DEPLOYMENT_TARGET=13.0
 
 for target in aarch64-apple-ios aarch64-apple-ios-sim; do
     echo "==> $target"
-    cargo build -p websave-bridge --release --target "$target"
+    cargo build -p websave_bridge --release --target "$target"
 done
 echo "==> done"
 ls -la target/aarch64-apple-ios{,-sim}/release/libwebsave_bridge.a

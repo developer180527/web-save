@@ -17,10 +17,8 @@ import 'world_outline.dart';
 ///
 /// The projection every "dots on a world map" wants. It distorts area badly
 /// near the poles, which matters for a choropleth and not at all for this.
-Offset project(double lat, double lon, Size size) => Offset(
-  (lon + 180) / 360 * size.width,
-  (90 - lat) / 180 * size.height,
-);
+Offset project(double lat, double lon, Size size) =>
+    Offset((lon + 180) / 360 * size.width, (90 - lat) / 180 * size.height);
 
 class WorldMapScreen extends StatefulWidget {
   const WorldMapScreen({super.key});
@@ -188,9 +186,7 @@ class _Legend extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor),
-        ),
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -234,15 +230,15 @@ class _Legend extends StatelessWidget {
                 : 'Where the bytes come from, not where the site is from. For '
                       'the networks marked anycast the dot is roughly '
                       'arbitrary — the provider name is the real answer.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).hintColor,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
           Text(
             data.database ?? '',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).hintColor,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: Theme.of(context).hintColor),
           ),
         ],
       ),

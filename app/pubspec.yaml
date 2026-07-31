@@ -47,6 +47,8 @@ dependencies:
   url_launcher: ^6.3.2
   file_picker: ^3.0.4
   share_plus: ^13.3.0
+  websave_bridge:
+    path: rust_builder
 
 dev_dependencies:
   flutter_test:

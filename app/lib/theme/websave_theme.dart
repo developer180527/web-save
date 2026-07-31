@@ -166,9 +166,8 @@ class WebSaveTheme extends ThemeModel {
         selectedTileColor: states.selected,
         iconColor: textDim,
       ),
-      textTheme: Typography.material2021(
-        platform: TargetPlatform.macOS,
-      ).black.apply(bodyColor: text, displayColor: text, fontFamily: fontFamily),
+      textTheme: Typography.material2021(platform: TargetPlatform.macOS).black
+          .apply(bodyColor: text, displayColor: text, fontFamily: fontFamily),
     );
   }
 
@@ -251,12 +250,8 @@ class WebSaveTheme extends ThemeModel {
 
   /// The roomy variant, for touch. Colours are untouched — only the metrics
   /// that decide how fat a finger needs the UI to be.
-  WebSaveTheme get touchVariant => copyWith(
-    rowHeight: 52,
-    iconTileSize: 34,
-    cardPadding: 16,
-    hitTarget: 44,
-  );
+  WebSaveTheme get touchVariant =>
+      copyWith(rowHeight: 52, iconTileSize: 34, cardPadding: 16, hitTarget: 44);
 }
 
 /// Reads the active model. Establishes an InheritedWidget dependency, so a

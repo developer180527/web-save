@@ -1,24 +1,20 @@
-// Links the Rust bridge into the iOS app binary.
+// System libraries the Rust bridge needs on iOS.
 //
-// On iOS there is no dylib to open at runtime: the static library is linked
-// into the app itself and Dart reaches its symbols through
-// ExternalLibrary.process(). That makes two things necessary here.
+// The archive itself is no longer linked here. Cargokit builds it as part of
+// the pod (see rust_builder/ios/websave_bridge.podspec) and force-loads it
+// from BUILT_PRODUCTS_DIR, so declaring our own -force_load against a
+// hand-built copy under target/ would link the same symbols twice — and would
+// quietly use a stale archive whenever build_rust_ios.sh had not been re-run.
 //
-// 1. The right slice. Device and simulator are different architectures and
-//    different cargo targets, so the search path is conditioned on the SDK.
+// -force_load stays necessary, it is just cargokit's job now. Worth knowing
+// why: nothing in the Swift or Objective-C references these symbols, because
+// Dart looks them up at runtime, so without it the linker drops the whole
+// archive as dead weight and the app launches only to fail finding them.
 //
-// 2. -force_load. Nothing in the Swift or Objective-C code references these
-//    symbols — Dart looks them up at runtime — so the linker would otherwise
-//    drop the entire archive as dead weight and the app would launch and
-//    immediately fail to find them. This is the single most common way an
-//    FFI iOS build goes wrong.
-//
-// The system libraries are the ones core's dependencies pull in: libc++ and
-// SQLite from rusqlite, resolv for DNS, Security and SystemConfiguration for
-// rustls' platform verifier. Same set as ios-app/build.sh already uses.
+// What cargokit does not supply is the set of system libraries core's
+// dependencies pull in: libc++ and SQLite via rusqlite, resolv for DNS, and
+// Security plus SystemConfiguration for rustls' platform verifier. A Rust
+// staticlib records those as link directives cargo has no way to pass on to
+// Xcode, so they are named here.
 
-RUST_LIB_DIR[sdk=iphoneos*] = $(SRCROOT)/../../target/aarch64-apple-ios/release
-RUST_LIB_DIR[sdk=iphonesimulator*] = $(SRCROOT)/../../target/aarch64-apple-ios-sim/release
-
-LIBRARY_SEARCH_PATHS = $(inherited) $(RUST_LIB_DIR)
-OTHER_LDFLAGS = $(inherited) -force_load $(RUST_LIB_DIR)/libwebsave_bridge.a -lc++ -lresolv -framework Security -framework SystemConfiguration
+OTHER_LDFLAGS = $(inherited) -lc++ -lresolv -framework Security -framework SystemConfiguration

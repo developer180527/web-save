@@ -1,28 +1,28 @@
-Run on iOS, and get data in and out
+Let the Flutter build compile Rust
 
-Verified on device and simulator: the bridge loads through
-ExternalLibrary.process(), the vault opens in the app container with all
-migrations applied, the theme engine restores its selection before first
-paint, and the shell picks its layout from width alone.
+Adopts cargokit, the documented integration backend, so the crate is
+built as part of flutter run/build on every platform. Previously each of
+the three Rust binaries was built by a hand-run script and the bindings
+carry a content hash both sides check at startup, so editing the bridge
+and rebuilding only the host failed on device with a mismatch that named
+neither the file nor the missing target.
 
-Import and export are exposed on the bridge and reachable from the
-sidebar. Import is two steps: preview_import parses the file and asks the
-vault what would happen without writing, so the count of new versus
-already-here versus unusable is visible before committing. HTML is the
-round-trip format; core's parser does not read JSON, so export defaults
-to HTML and JSON is offered as a backup rather than a transfer format.
+macOS was the real breakage. It never linked the library at all: the
+loader searched the source tree for a dylib, looked only in target/debug
+regardless of build mode, and walked eight parent directories up from the
+executable. That worked when launched from inside the repo and failed, or
+silently found a stale build, anywhere else — so release builds did not
+run. The library now ships inside the bundle and the search is deleted.
 
-Filter taps in the sidebar now navigate as well as filter. The sidebar
-stays visible while Settings and Import are showing, where changing the
-filter alone updated the highlight and the counts and left the main pane
-untouched — indistinguishable from the tap being ignored.
+Renames the crate to websave_bridge. Cargo tolerates a hyphen but emits
+underscores in artifact filenames, so cargokit looked for a static lib
+that never existed and fell through to a dylib path that threw; dart pub
+add rejected the same name outright.
 
-DesktopShell insets the top edge. It never needed to on desktop, where
-the custom title bar reserves it, but the same shell runs on iPad with no
-title bar and the sidebar heading landed under the status bar clock.
+iOS keeps -force_load, now declared by the pod rather than by us against
+a hand-built archive. Rust.xcconfig keeps only the system libraries
+cargokit cannot know about, which a Rust staticlib records as link
+directives cargo has no way to pass to Xcode.
 
-build_rust_ios.sh pins IPHONEOS_DEPLOYMENT_TARGET to match the Xcode
-project, and sync_bridge.sh regenerates the bindings and rebuilds all
-three Rust binaries in one step. The bindings carry a content hash both
-sides check at startup, and cargo build refreshes exactly one of the
-three target
+Verified: macOS release runs from outside the repo, and the app builds
+and runs on a physical iPhone with no duplicate symbols.
