@@ -374,11 +374,10 @@ pub fn run_import(content: String) -> Result<ImportPreview, String> {
 
 /// Serialize the whole vault.
 ///
-/// `"html"` is the round-trip format: Netscape bookmarks, which both any
-/// browser *and* this app's own importer read. `"json"` carries more fields
-/// (status, timestamps, archive stamps) but the importer does not parse it —
-/// it is for backup and for other tools, not for moving a vault between
-/// devices. Anything that is not "json" gives HTML.
+/// `"json"` keeps the most detail and now imports back in, so it is the
+/// format for moving a vault between devices. `"html"` is Netscape bookmarks,
+/// which any browser reads as well as this app's own importer, and is the one
+/// to hand to something that is not WebSave. Anything not "json" gives HTML.
 pub fn export_vault(format: String) -> Result<String, String> {
     let saves = vault()?.all_saves().map_err(|e| e.to_string())?;
     let now = std::time::SystemTime::now()

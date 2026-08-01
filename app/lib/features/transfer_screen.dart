@@ -110,6 +110,11 @@ class _TransferPanelState extends State<TransferPanel> {
       final stamp = DateTime.now().toIso8601String().split('T').first;
       final extension = format == 'json' ? 'json' : 'html';
       final dir = await getTemporaryDirectory();
+      // getTemporaryDirectory reports the path the OS *would* use; on macOS
+      // the per-app Caches directory is not created until something writes
+      // there, so writing straight into it throws PathNotFoundException on a
+      // clean machine.
+      await dir.create(recursive: true);
       final file = File('${dir.path}/websave-$stamp.$extension');
       await file.writeAsString(content);
       // The system share sheet, so the file can go to Files, AirDrop, mail —
@@ -168,9 +173,9 @@ class _TransferPanelState extends State<TransferPanel> {
         const SizedBox(height: 24),
         _Heading('Export'),
         Text(
-          'HTML is the round trip: browsers read it and so does this app\'s '
-          'own importer. JSON carries more detail — link health, timestamps — '
-          'but is for backup rather than for moving a vault.',
+          'JSON keeps the most detail and imports back into WebSave. HTML is '
+          'the interchange format: any browser reads it, and so does this '
+          'app\'s own importer.',
           style: TextStyle(color: ws.textDim, fontSize: 12.5),
         ),
         const SizedBox(height: 12),

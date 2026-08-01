@@ -42,7 +42,7 @@ dependencies:
   flutter_theme_engine:
     git:
       url: https://github.com/developer180527/flutter_theme_engine.git
-      ref: 19b880e
+      ref: a7aae55
   window_manager: ^0.5.2
   url_launcher: ^6.3.2
   share_plus: ^13.3.0

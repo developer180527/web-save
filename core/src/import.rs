@@ -23,6 +23,8 @@ pub struct ImportItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImportFormat {
+    /// This app's own JSON export.
+    Json,
     NetscapeHtml,
     RaindropCsv,
     PocketCsv,
@@ -33,6 +35,7 @@ pub enum ImportFormat {
 impl ImportFormat {
     pub fn label(self) -> &'static str {
         match self {
+            ImportFormat::Json => "WebSave export (JSON)",
             ImportFormat::NetscapeHtml => "Browser bookmarks (HTML)",
             ImportFormat::RaindropCsv => "Raindrop.io CSV",
             ImportFormat::PocketCsv => "Pocket CSV",
@@ -58,7 +61,15 @@ pub struct ImportReport {
 /// Sniff the format and parse. Never fails; unparseable content simply
 /// yields zero items.
 pub fn parse(content: &str) -> (ImportFormat, Vec<ImportItem>) {
-    let lower = content.trim_start().to_ascii_lowercase();
+    let trimmed = content.trim_start();
+    // Our own export. Checked first and by shape rather than by extension,
+    // since a file that is valid JSON is never any of the other formats.
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        if let Some(items) = parse_json(content) {
+            return (ImportFormat::Json, items);
+        }
+    }
+    let lower = trimmed.to_ascii_lowercase();
     let looks_like_html = lower.starts_with("<!doctype netscape")
         || lower.starts_with("<!doctype html")
         || lower.contains("<dl")
@@ -70,6 +81,71 @@ pub fn parse(content: &str) -> (ImportFormat, Vec<ImportItem>) {
         return (format, items);
     }
     (ImportFormat::UrlList, parse_url_list(content))
+}
+
+// ---------------------------------------------------------------- JSON --
+
+/// Parse this app's own JSON export.
+///
+/// Accepts the wrapper `{"saves": [...]}` this app writes and a bare top-level
+/// array, so a file hand-trimmed to just the saves still imports. Returns None
+/// when the content is not JSON at all, which lets [parse] fall through to
+/// sniffing the other formats rather than reporting zero items for a file it
+/// simply guessed wrong about.
+pub fn parse_json(content: &str) -> Option<Vec<ImportItem>> {
+    let value: serde_json::Value = serde_json::from_str(content).ok()?;
+    let entries = match &value {
+        serde_json::Value::Array(items) => items.as_slice(),
+        serde_json::Value::Object(map) => map.get("saves")?.as_array()?.as_slice(),
+        _ => return None,
+    };
+
+    let text = |entry: &serde_json::Value, key: &str| -> String {
+        entry
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    Some(
+        entries
+            .iter()
+            .map(|entry| ImportItem {
+                url: text(entry, "url"),
+                title: text(entry, "title"),
+                description: text(entry, "description"),
+                // The export writes `note`; accept `notes` too, since that is
+                // what this struct calls it and hand-edited files use both.
+                notes: {
+                    let note = text(entry, "note");
+                    if note.is_empty() {
+                        text(entry, "notes")
+                    } else {
+                        note
+                    }
+                },
+                tags: entry
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .map(|list| {
+                        list.iter()
+                            .filter_map(|t| t.as_str())
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                favorite: entry
+                    .get("favorite")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                created_at: entry
+                    .get("created_at")
+                    .or_else(|| entry.get("createdAt"))
+                    .and_then(serde_json::Value::as_i64),
+            })
+            .collect(),
+    )
 }
 
 // ---------------------------------------------------------------- HTML --
@@ -422,5 +498,49 @@ mod tests {
         assert_eq!(attr(tag, "href").as_deref(), Some("https://e.com/?a=1&b=2"));
         assert_eq!(attr(tag, "add_date").as_deref(), Some("1588327800"));
         assert_eq!(attr(tag, "missing"), None);
+    }
+}
+
+#[cfg(test)]
+mod json_tests {
+    use super::*;
+
+    /// The shape `export::to_json` actually writes. Guards the round trip:
+    /// exporting on one machine and importing on another is the whole point
+    /// of the format, and it silently found zero links before this existed.
+    #[test]
+    fn parses_our_own_export() {
+        let content = r#"{
+            "app": "websave",
+            "format": "websave-export-v1",
+            "count": 2,
+            "saves": [
+                {"url": "https://example.com", "title": "Example",
+                 "description": "A site", "tags": ["a", "b"], "favorite": true},
+                {"url": "https://other.test", "title": "Other", "tags": []}
+            ]
+        }"#;
+        let (format, items) = parse(content);
+        assert_eq!(format, ImportFormat::Json);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].url, "https://example.com");
+        assert_eq!(items[0].tags, vec!["a", "b"]);
+        assert!(items[0].favorite);
+        assert_eq!(items[1].title, "Other");
+    }
+
+    #[test]
+    fn accepts_a_bare_array() {
+        let (format, items) = parse(r#"[{"url": "https://example.com"}]"#);
+        assert_eq!(format, ImportFormat::Json);
+        assert_eq!(items.len(), 1);
+    }
+
+    /// Non-JSON starting with a brace must not be claimed by the JSON parser
+    /// and reported as an empty import.
+    #[test]
+    fn falls_through_when_not_json() {
+        let (format, _) = parse("{ this is not json\nhttps://example.com\n");
+        assert_ne!(format, ImportFormat::Json);
     }
 }

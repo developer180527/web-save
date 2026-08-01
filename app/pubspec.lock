@@ -223,8 +223,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "19b880e"
-      resolved-ref: "19b880e6faa17344c026f12db864256592dffa59"
+      ref: a7aae55
+      resolved-ref: a7aae553ea2fb3ba8d6afaf1f9cb1b88d1c34d4f
       url: "https://github.com/developer180527/flutter_theme_engine.git"
     source: git
     version: "0.1.0"
