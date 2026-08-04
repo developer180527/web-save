@@ -16,6 +16,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
+import 'activity_log_panel.dart';
 import 'saves_controller.dart';
 import 'settings_section.dart';
 import 'transfer_screen.dart';
@@ -104,6 +105,13 @@ class SettingsScreen extends StatelessWidget {
                 'there is nothing to report here.',
               ),
           ],
+        ),
+        const SettingsSection(
+          title: 'Activity',
+          description:
+              'What the app has been doing, including work done in the '
+              'background where there is no window to report it.',
+          children: [ActivityLogPanel()],
         ),
         const SettingsSection(title: 'About', children: [_AboutPanel()]),
       ],

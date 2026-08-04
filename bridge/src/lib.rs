@@ -5,4 +5,5 @@
 //! app) — two bindings over one engine, both deliberately small.
 
 pub mod api;
+pub mod background;
 mod frb_generated;

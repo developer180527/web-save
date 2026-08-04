@@ -20,6 +20,7 @@
 //! Rust allows inherent `impl` blocks anywhere in the defining crate, so each
 //! submodule adds its own methods to [`Vault`]; callers see one flat API.
 
+mod activity;
 mod host_locations;
 mod imports;
 mod link_checks;
@@ -35,6 +36,7 @@ mod thumbnails;
 mod trash;
 mod url_normalization;
 
+pub use activity::ActivityEntry;
 pub use thumbnails::THUMBS_DIR;
 
 use std::fs;

@@ -304,7 +304,18 @@ pub fn update_save(
 }
 
 pub fn delete_save(id: i64) -> Result<(), String> {
-    vault()?.delete_save(id).map_err(|e| e.to_string())
+    let vault = vault()?;
+    // Recorded because this is the one action in the app with no undo. The
+    // URL is captured before the row goes, since afterwards there is nothing
+    // left to name it by.
+    let url = vault.get_save(id).ok().map(|s| s.url);
+    vault.delete_save(id).map_err(|e| e.to_string())?;
+    vault.log_activity(
+        "warn",
+        "app",
+        &format!("Deleted {}", url.unwrap_or_else(|| format!("save {id}"))),
+    );
+    Ok(())
 }
 
 /// Check one link right now and return its fresh state.
@@ -313,10 +324,24 @@ pub fn delete_save(id: i64) -> Result<(), String> {
 /// worker thread, so the Dart isolate keeps painting, but the caller still
 /// wants a pending state on the button.
 pub fn check_save_now(id: i64) -> Result<SaveView, String> {
-    vault()?
-        .check_save(id)
-        .map(SaveView::from)
-        .map_err(|e| e.to_string())
+    let vault = vault()?;
+    let before = vault.get_save(id).ok().map(|s| s.status);
+    let after = vault.check_save(id).map_err(|e| e.to_string())?;
+
+    // Only when the verdict moved. Logging every manual check would bury the
+    // events worth reading under a line per button press.
+    if before != Some(after.status) {
+        vault.log_activity(
+            if matches!(after.status, websave_core::LinkStatus::Dead) {
+                "warn"
+            } else {
+                "info"
+            },
+            "monitor",
+            &format!("{} is now {:?}", after.url, after.status),
+        );
+    }
+    Ok(SaveView::from(after))
 }
 
 /// The readable-text snapshot the monitor archived, if there is one.
@@ -367,7 +392,19 @@ pub fn preview_import(content: String) -> Result<ImportPreview, String> {
 /// the same file twice is safe.
 pub fn run_import(content: String) -> Result<ImportPreview, String> {
     let (format, items) = websave_core::import::parse(&content);
-    let report = vault()?.import_items(&items).map_err(|e| e.to_string())?;
+    let vault = vault()?;
+    let report = vault.import_items(&items).map_err(|e| e.to_string())?;
+    vault.log_activity(
+        "info",
+        "import",
+        &format!(
+            "Imported {} new save(s) from {} ({} already present, {} unusable)",
+            report.new,
+            describe_format(format),
+            report.existing,
+            report.invalid
+        ),
+    );
     Ok(ImportPreview {
         format: describe_format(format),
         total: report.total,
@@ -393,7 +430,8 @@ pub struct ExportResult {
 /// Lets the transfer screen tell the user that dead links will be left out
 /// *before* they pick a destination, instead of explaining it afterwards.
 pub fn export_preview() -> Result<ExportResult, String> {
-    let saves = vault()?.all_saves().map_err(|e| e.to_string())?;
+    let vault = vault()?;
+    let saves = vault.all_saves().map_err(|e| e.to_string())?;
     let (_, summary) = websave_core::export::exportable(&saves);
     Ok(ExportResult {
         content: String::new(),
@@ -592,7 +630,8 @@ pub fn add_save_by_url(url: String, title: Option<String>) -> Result<SaveView, S
         return Err("Only http and https links can be saved.".into());
     }
 
-    let save = vault()?
+    let vault = vault()?;
+    let save = vault
         .add_save(websave_core::NewSave {
             url: parsed.to_string(),
             title: title.unwrap_or_default(),
@@ -601,6 +640,7 @@ pub fn add_save_by_url(url: String, title: Option<String>) -> Result<SaveView, S
             tags: Vec::new(),
         })
         .map_err(|e| e.to_string())?;
+    vault.log_activity("info", "app", &format!("Added {}", save.url));
     Ok(SaveView::from(save))
 }
 
@@ -616,4 +656,42 @@ pub fn looks_like_url(text: String) -> bool {
         return false;
     }
     url::Url::parse(trimmed).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
+}
+
+// ---- activity log ----
+
+pub struct ActivityEntryView {
+    pub at: i64,
+    pub level: String,
+    pub source: String,
+    pub message: String,
+}
+
+/// Recent activity, newest first.
+///
+/// Read from the vault rather than from an in-memory buffer so it survives a
+/// restart and — the point of it — so work done by a process with no Flutter
+/// engine, like the iOS background sweep, is visible here at all.
+pub fn recent_activity(limit: i64) -> Result<Vec<ActivityEntryView>, String> {
+    Ok(vault()?
+        .recent_activity(limit)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|e| ActivityEntryView {
+            at: e.at,
+            level: e.level,
+            source: e.source,
+            message: e.message,
+        })
+        .collect())
+}
+
+/// Append an entry from the Dart side.
+pub fn log_activity(level: String, source: String, message: String) -> Result<(), String> {
+    vault()?.log_activity(&level, &source, &message);
+    Ok(())
+}
+
+pub fn clear_activity() -> Result<(), String> {
+    vault()?.clear_activity().map_err(|e| e.to_string())
 }

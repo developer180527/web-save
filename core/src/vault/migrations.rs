@@ -222,6 +222,28 @@ UPDATE saves
        dead_since = NULL
  WHERE status = 'dead';
 "#,
+    // v11 — activity log.
+    //
+    // Added because the iOS background sweep is unobservable: it runs with no
+    // engine, on a schedule the OS decides, often while the phone is in a
+    // pocket. os_log would show it in Console.app on a tethered Mac, which is
+    // no use to someone asking why their links stopped being checked. Writing
+    // to the vault means the one process that can see the event records it and
+    // the app can show it later.
+    //
+    // Capped by trimming on insert rather than by a background job: this table
+    // exists to answer "what happened recently", and an unbounded log on a
+    // phone is a slow leak nobody notices.
+    r#"
+    CREATE TABLE IF NOT EXISTS activity_log (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        at       INTEGER NOT NULL,
+        level    TEXT    NOT NULL,
+        source   TEXT    NOT NULL,
+        message  TEXT    NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_activity_log_at ON activity_log(at DESC);
+    "#,
 ];
 
 pub(super) fn migrate(conn: &Connection) -> Result<()> {

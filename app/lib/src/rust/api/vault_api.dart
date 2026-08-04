@@ -187,6 +187,57 @@ Future<SaveView> addSaveByUrl({required String url, String? title}) =>
 Future<bool> looksLikeUrl({required String text}) =>
     RustLib.instance.api.crateApiVaultApiLooksLikeUrl(text: text);
 
+/// Recent activity, newest first.
+///
+/// Read from the vault rather than from an in-memory buffer so it survives a
+/// restart and — the point of it — so work done by a process with no Flutter
+/// engine, like the iOS background sweep, is visible here at all.
+Future<List<ActivityEntryView>> recentActivity({
+  required PlatformInt64 limit,
+}) => RustLib.instance.api.crateApiVaultApiRecentActivity(limit: limit);
+
+/// Append an entry from the Dart side.
+Future<void> logActivity({
+  required String level,
+  required String source,
+  required String message,
+}) => RustLib.instance.api.crateApiVaultApiLogActivity(
+  level: level,
+  source: source,
+  message: message,
+);
+
+Future<void> clearActivity() =>
+    RustLib.instance.api.crateApiVaultApiClearActivity();
+
+class ActivityEntryView {
+  final PlatformInt64 at;
+  final String level;
+  final String source;
+  final String message;
+
+  const ActivityEntryView({
+    required this.at,
+    required this.level,
+    required this.source,
+    required this.message,
+  });
+
+  @override
+  int get hashCode =>
+      at.hashCode ^ level.hashCode ^ source.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ActivityEntryView &&
+          runtimeType == other.runtimeType &&
+          at == other.at &&
+          level == other.level &&
+          source == other.source &&
+          message == other.message;
+}
+
 /// An export, plus what it left out — so the UI can say so rather than
 /// silently writing a smaller file than the user expected.
 class ExportResult {
