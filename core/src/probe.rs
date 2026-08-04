@@ -97,7 +97,7 @@ impl CheckOutcome {
     /// about the next link on that host. A transport failure is the host
     /// itself being unreachable, which is very likely to repeat.
     pub fn is_transport_failure(&self) -> bool {
-        self.status == LinkStatus::Dead && self.http_status.is_none()
+        self.status == LinkStatus::Unreachable && self.http_status.is_none()
     }
 }
 
@@ -163,11 +163,41 @@ impl Prober {
             // and tell us nothing about whether the browser identity was let
             // through.
             let second = probe(&self.agent, url, previous_hash, None, Some(BROWSER_UA));
-            if second.status != LinkStatus::Dead {
+            // Only a *better* answer displaces the first verdict. A retry
+            // that merely failed differently — the connection dropped this
+            // time — tells us nothing, and must not overwrite a definitive
+            // 404 with a vaguer "unreachable".
+            if matches!(
+                second.status,
+                LinkStatus::Active | LinkStatus::Changed | LinkStatus::Redirected
+            ) {
                 return second;
             }
         }
         first
+    }
+
+    /// Probe a link, refusing to condemn one we simply can't route to.
+    ///
+    /// A save on a Tailscale/LAN/VPN host is unreachable whenever we're on
+    /// the wrong network, which is indistinguishable from a dead public host
+    /// at the socket level. Since only [`LinkStatus::Dead`] is ever
+    /// auto-deleted, private hosts are downgraded to
+    /// [`LinkStatus::Unreachable`] rather than trusted to a failure that
+    /// describes our vantage point instead of the resource.
+    pub fn check_save(&self, target: &CheckTarget) -> CheckOutcome {
+        let mut outcome = self.check(target);
+        if outcome.status == LinkStatus::Dead {
+            if let Some(kind) = crate::reachability::private_host(&target.url) {
+                log::debug!(
+                    "{}: failed but is {} — recording unreachable, not dead",
+                    target.url,
+                    kind.reason()
+                );
+                outcome.status = LinkStatus::Unreachable;
+            }
+        }
+        outcome
     }
 }
 
@@ -183,8 +213,13 @@ pub fn check_url(url: &str) -> CheckOutcome {
 /// - `redirected`: the request ended at a meaningfully different location
 ///   (http→https upgrades and `www.` changes are treated as the same place).
 /// - `changed`: reachable, but the content hash differs from the stored one.
-/// - `dead`: transport/DNS failure, 404/410, other client errors, or 5xx.
-///   401/403/405/406/429 count as `active` — the page exists, it just
+/// - `dead`: a working server answered 404/410. This is the *only* verdict
+///   that can eventually lead to deletion, so it demands positive evidence.
+/// - `unreachable`: we never got an answer we could trust — DNS/connection/
+///   TLS failure, timeout, 5xx, or an unusual 4xx. Also what a private
+///   LAN/VPN/Tailscale host looks like from the wrong network, which is why
+///   it is never auto-deleted.
+///   401/403/405/406/429/451 count as `active` — the page exists, it just
 ///   doesn't want to talk to a bot.
 ///
 /// When the target carries usable validators (see
@@ -293,14 +328,20 @@ fn probe(
             let final_url = resp.get_url().to_string();
             let redirected = !same_destination(url, &final_url);
             let status = match code {
-                401 | 403 | 405 | 406 | 429 => {
+                // The page exists, it just won't talk to a bot.
+                401 | 403 | 405 | 406 | 429 | 451 => {
                     if redirected {
                         LinkStatus::Redirected
                     } else {
                         LinkStatus::Active
                     }
                 }
-                _ => LinkStatus::Dead,
+                // A working server affirmatively saying "this is gone" is the
+                // only evidence strong enough to justify eventual deletion.
+                404 | 410 => LinkStatus::Dead,
+                // Everything else — 5xx outages, odd 4xx — means something is
+                // wrong right now, not that the resource is gone.
+                _ => LinkStatus::Unreachable,
             };
             CheckOutcome {
                 status,
@@ -309,8 +350,11 @@ fn probe(
                 ..Default::default()
             }
         }
+        // Transport failure: DNS, connection refused, TLS, timeout. We never
+        // reached a server, so we have no evidence about the resource — only
+        // that we couldn't get there from here.
         Err(_) => CheckOutcome {
-            status: LinkStatus::Dead,
+            status: LinkStatus::Unreachable,
             ..Default::default()
         },
     }

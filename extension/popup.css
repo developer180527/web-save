@@ -141,12 +141,18 @@ body {
   white-space: nowrap;
 }
 
-.row-dead {
+.row-dead,
+.row-unreachable {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--red);
   flex-shrink: 0;
+}
+
+/* Amber: unreachable is a warning, not a verdict. */
+.row-unreachable {
+  background: #d9a13b;
 }
 
 .empty {

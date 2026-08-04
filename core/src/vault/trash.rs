@@ -18,11 +18,38 @@ impl Vault {
     pub fn purge_expired_dead(&self, grace_secs: i64) -> Result<u32> {
         let cutoff = now() - grace_secs;
         let conn = self.conn.lock().unwrap();
-        let removed = conn.execute(
-            "DELETE FROM saves
-             WHERE status = 'dead' AND dead_since IS NOT NULL AND dead_since <= ?1",
-            params![cutoff],
-        )?;
+
+        // Belt and braces. Classification already downgrades private hosts to
+        // `unreachable`, so they shouldn't be here — but this is the one
+        // operation that destroys data irreversibly, so it re-checks the URL
+        // itself rather than trusting a status column that some earlier
+        // version (or a future bug) may have set wrongly.
+        let condemned: Vec<i64> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, url FROM saves
+                 WHERE status = 'dead' AND dead_since IS NOT NULL AND dead_since <= ?1",
+            )?;
+            let rows = stmt.query_map(params![cutoff], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })?;
+            let mut ids = Vec::new();
+            for row in rows {
+                let (id, url) = row?;
+                match crate::reachability::private_host(&url) {
+                    Some(kind) => log::warn!(
+                        "trash: refusing to purge #{id} ({url}) — {}",
+                        kind.reason()
+                    ),
+                    None => ids.push(id),
+                }
+            }
+            ids
+        };
+
+        let mut removed = 0usize;
+        for id in &condemned {
+            removed += conn.execute("DELETE FROM saves WHERE id = ?1", params![id])?;
+        }
         if removed > 0 {
             conn.execute(
                 "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM save_tags)",

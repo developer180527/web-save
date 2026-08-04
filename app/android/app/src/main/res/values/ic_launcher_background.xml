@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The icon's plate colour, taken from the automatic-gradient fill in
+  Assets/AppIcon.icon/icon.json so the Android icon matches the Apple one.
+-->
+<resources>
+    <color name="ic_launcher_background">#9437FF</color>
+</resources>

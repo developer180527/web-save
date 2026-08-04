@@ -51,8 +51,18 @@ class _TransferPanelState extends State<TransferPanel> {
   String? _pickedContent;
   ImportPreview? _preview;
   ImportPreview? _result;
+  /// What an export would contain, refreshed on open and after each export.
+  ExportResult? _exportPreview;
+  /// The export that just happened, so its counts can be reported.
+  ExportResult? _exportResult;
   String? _error;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExportPreview();
+  }
 
   Future<void> _pick() async {
     setState(() {
@@ -100,13 +110,26 @@ class _TransferPanelState extends State<TransferPanel> {
     }
   }
 
+  /// What an export would contain right now, so the screen can say what is
+  /// being left out *before* the user commits to a destination.
+  Future<void> _loadExportPreview() async {
+    try {
+      final preview = await exportPreview();
+      if (mounted) setState(() => _exportPreview = preview);
+    } catch (_) {
+      // Non-fatal: the counts are an explanation, not a precondition.
+    }
+  }
+
   Future<void> _export(String format) async {
     setState(() {
       _busy = true;
       _error = null;
+      _exportResult = null;
     });
     try {
-      final content = await exportVault(format: format);
+      final result = await exportVault(format: format);
+      final content = result.content;
       final stamp = DateTime.now().toIso8601String().split('T').first;
       final extension = format == 'json' ? 'json' : 'html';
       final dir = await getTemporaryDirectory();
@@ -122,6 +145,8 @@ class _TransferPanelState extends State<TransferPanel> {
       await SharePlus.instance.share(
         ShareParams(files: [XFile(file.path)], text: 'WebSave export'),
       );
+      if (mounted) setState(() => _exportResult = result);
+      await _loadExportPreview();
     } catch (e) {
       setState(() => _error = '$e');
     } finally {
@@ -178,6 +203,10 @@ class _TransferPanelState extends State<TransferPanel> {
           'app\'s own importer.',
           style: TextStyle(color: ws.textDim, fontSize: 12.5),
         ),
+        if (_exportPreview case final preview?) ...[
+          const SizedBox(height: 10),
+          _ExportScopeCard(preview: preview),
+        ],
         const SizedBox(height: 12),
         Row(
           children: [
@@ -194,6 +223,16 @@ class _TransferPanelState extends State<TransferPanel> {
             ),
           ],
         ),
+        if (_exportResult case final result?) ...[
+          const SizedBox(height: 12),
+          Text(
+            result.skippedDead == 0
+                ? 'Exported ${result.exported} save(s).'
+                : 'Exported ${result.exported} save(s); '
+                      'left out ${result.skippedDead} dead link(s).',
+            style: TextStyle(color: ws.textDim, fontSize: 12.5),
+          ),
+        ],
         if (_error case final error?) ...[
           const SizedBox(height: 16),
           Text(error, style: TextStyle(color: ws.danger, fontSize: 12.5)),
@@ -203,6 +242,53 @@ class _TransferPanelState extends State<TransferPanel> {
           const Center(child: CircularProgressIndicator()),
         ],
       ],
+    );
+  }
+}
+
+/// What an export will and won't contain.
+///
+/// Shown before the user picks a destination: an export quietly smaller than
+/// the vault is alarming if you only find out afterwards.
+class _ExportScopeCard extends StatelessWidget {
+  const _ExportScopeCard({required this.preview});
+  final ExportResult preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final ws = context.ws;
+    return Container(
+      padding: EdgeInsets.all(ws.cardPadding),
+      decoration: BoxDecoration(
+        color: ws.panel,
+        border: Border.all(color: ws.border),
+        borderRadius: BorderRadius.circular(ws.cardRadius),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Stat(
+            label: 'Will be exported',
+            value: preview.exported,
+            color: ws.health.active,
+          ),
+          if (preview.skippedDead > 0) ...[
+            _Stat(
+              label: 'Dead links, left out',
+              value: preview.skippedDead,
+              color: ws.health.dead,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Links a server confirmed are gone (404) are not exported — a '
+              'backup should not carry addresses that no longer resolve. '
+              'Anything merely unreachable, like a Tailscale or LAN address, '
+              'is still included.',
+              style: TextStyle(color: ws.textDim, fontSize: 11.5),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

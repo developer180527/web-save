@@ -362,7 +362,9 @@ impl Monitor {
         prober: &Prober,
         total: usize,
     ) -> Option<CheckOutcome> {
-        let outcome = prober.check(target);
+        // `check_save`, not `check`: a link on a private host must not be
+        // condemned just because this machine isn't on that network.
+        let outcome = prober.check_save(target);
         if let Err(e) = self.vault.apply_check(target.id, &outcome) {
             // A save deleted mid-sweep is ordinary, not an error worth
             // aborting the whole run over.
@@ -379,6 +381,10 @@ impl Monitor {
             .fetch_add(usize::from(outcome.not_modified), Ordering::Relaxed);
         state.changed.fetch_add(
             usize::from(outcome.status == LinkStatus::Changed),
+            Ordering::Relaxed,
+        );
+        state.unreachable.fetch_add(
+            usize::from(outcome.status == LinkStatus::Unreachable),
             Ordering::Relaxed,
         );
         state.dead.fetch_add(

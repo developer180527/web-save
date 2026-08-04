@@ -124,10 +124,13 @@ function render() {
     text.append(title, sub);
 
     row.append(icon, text);
-    if (save.status === "dead") {
+    if (save.status === "dead" || save.status === "unreachable") {
       const dot = document.createElement("span");
-      dot.className = "row-dead";
-      dot.title = "This link stopped responding";
+      const dead = save.status === "dead";
+      dot.className = dead ? "row-dead" : "row-unreachable";
+      dot.title = dead
+        ? "A server said this page is gone"
+        : "Couldn't be reached — it may be on a network you're not connected to";
       row.append(dot);
     }
     listEl.append(row);

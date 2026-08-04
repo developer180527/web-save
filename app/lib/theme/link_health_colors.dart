@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../src/rust/api/vault_api.dart';
 
-/// The five states a saved link can be in.
+/// The six states a saved link can be in.
 ///
 /// This is WebSave's actual semantic vocabulary and Material has no word for
-/// any of it — `error` is the closest, and it only covers one of the five. So
-/// it lives on the theme model, which means a pack author restates five named
+/// any of it — `error` is the closest, and it only covers one of the six. So
+/// it lives on the theme model, which means a pack author restates six named
 /// colours instead of guessing which greys were meant.
 @immutable
 class LinkHealthColors {
@@ -14,6 +14,7 @@ class LinkHealthColors {
     required this.active,
     required this.changed,
     required this.redirected,
+    required this.unreachable,
     required this.dead,
     required this.unchecked,
   });
@@ -27,7 +28,15 @@ class LinkHealthColors {
   /// Now resolves somewhere meaningfully different.
   final Color redirected;
 
-  /// Unreachable, or gone.
+  /// Couldn't be reached from here — the site may be down, or the address
+  /// may be on a network this device isn't attached to (Tailscale, VPN, LAN).
+  ///
+  /// Deliberately not the `dead` colour: these are never deleted, and showing
+  /// them in the same red as confirmed rot tells the user their data is at
+  /// risk when it isn't.
+  final Color unreachable;
+
+  /// Confirmed gone: a working server answered 404/410.
   final Color dead;
 
   /// Never checked.
@@ -42,6 +51,7 @@ class LinkHealthColors {
     'active' => active,
     'changed' => changed,
     'redirected' => redirected,
+    'unreachable' => unreachable,
     'dead' => dead,
     _ => unchecked,
   };
@@ -52,12 +62,14 @@ class LinkHealthColors {
     Color? active,
     Color? changed,
     Color? redirected,
+    Color? unreachable,
     Color? dead,
     Color? unchecked,
   }) => LinkHealthColors(
     active: active ?? this.active,
     changed: changed ?? this.changed,
     redirected: redirected ?? this.redirected,
+    unreachable: unreachable ?? this.unreachable,
     dead: dead ?? this.dead,
     unchecked: unchecked ?? this.unchecked,
   );
@@ -70,6 +82,7 @@ class LinkHealthColors {
     active: Color.lerp(a.active, b.active, t)!,
     changed: Color.lerp(a.changed, b.changed, t)!,
     redirected: Color.lerp(a.redirected, b.redirected, t)!,
+    unreachable: Color.lerp(a.unreachable, b.unreachable, t)!,
     dead: Color.lerp(a.dead, b.dead, t)!,
     unchecked: Color.lerp(a.unchecked, b.unchecked, t)!,
   );
@@ -78,6 +91,7 @@ class LinkHealthColors {
     'active': active.toARGB32(),
     'changed': changed.toARGB32(),
     'redirected': redirected.toARGB32(),
+    'unreachable': unreachable.toARGB32(),
     'dead': dead.toARGB32(),
     'unchecked': unchecked.toARGB32(),
   };
@@ -87,6 +101,11 @@ class LinkHealthColors {
         active: Color(json['active'] as int),
         changed: Color(json['changed'] as int),
         redirected: Color(json['redirected'] as int),
+        // Fall back to `changed` (amber): packs saved before `unreachable`
+        // existed must still load rather than throwing on a missing key.
+        unreachable: Color(
+          (json['unreachable'] ?? json['changed']) as int,
+        ),
         dead: Color(json['dead'] as int),
         unchecked: Color(json['unchecked'] as int),
       );

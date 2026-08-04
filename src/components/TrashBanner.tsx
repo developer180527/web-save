@@ -24,13 +24,17 @@ export default function TrashBanner({
       </span>
       <div className="trash-banner-text">
         <strong>
-          Links that stopped responding{count > 0 ? ` (${count})` : ""}
+          Pages a server said are gone{count > 0 ? ` (${count})` : ""}
         </strong>
         <span>
-          They're still checked on the normal schedule — if a site comes back,
-          it leaves the trash automatically and returns to your library.
+          Only links whose server actively answered “not found” (404/410) land
+          here. Anything we merely couldn't reach — a site that's down, or a
+          Tailscale/VPN/LAN address you're not currently connected to — is
+          listed under <strong>Unreachable</strong> instead and is never
+          deleted. These are still re-checked, and leave the trash by
+          themselves if the page comes back.
           {autoPurge
-            ? ` Anything still dead after ${TRASH_GRACE_DAYS} days is deleted permanently.`
+            ? ` Anything still gone after ${TRASH_GRACE_DAYS} days is deleted permanently.`
             : " Automatic deletion is turned off in Settings, so nothing is removed until you empty the trash."}
         </span>
       </div>

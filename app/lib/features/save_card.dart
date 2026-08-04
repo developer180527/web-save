@@ -45,11 +45,39 @@ class SaveCard extends StatefulWidget {
   final String? thumbnailPath;
   final bool checking;
 
-  /// Constant, not flexible. Letting the cover absorb leftover space made
-  /// every card's image a different height, because the text block below
-  /// varies with description and tags — a constant cover is what makes the
-  /// grid read as a grid.
-  static const double coverHeight = 150;
+  /// Cards flex between these, and the grid picks the column count that keeps
+  /// them inside the band (see `saves_screen.dart`). A single fixed width was
+  /// the first attempt, but any one number misses a column by a few points at
+  /// some window size and pays for that near-miss with an empty margin nearly
+  /// a card wide down both sides. A band always tiles the pane exactly.
+  ///
+  /// The range is deliberately narrow. What made the earlier max-extent grid
+  /// squirm was not that cards resized at all, it was that a tile could land
+  /// anywhere between half and all of the extent.
+  static const double minWidth = 208;
+  static const double maxWidth = 276;
+
+  /// The cover's *ratio* is held constant, not its pixel height. That is the
+  /// whole trick: with a fixed height, changing the card's width changed the
+  /// cover's shape, so `BoxFit.cover` chose a different crop of the
+  /// screenshot on every frame of a window drag — which is what read as the
+  /// grid squirming. With a fixed ratio the crop window is identical at any
+  /// width and a resize merely scales the image it already chose. Roughly 2:1
+  /// is what lets a typical og:image or page screenshot land on its subject
+  /// rather than on a slice of it.
+  static const double coverAspect = 2.12;
+
+  /// Title, host, two description lines and a tag row. Constant, because it
+  /// is type — it does not want to grow with the card. Sized with a little
+  /// slack: the body is laid out from its natural height, and a card that is
+  /// exactly tight overflows the moment a font setting or a theme pack's
+  /// padding differs from the one it was measured against.
+  static const double bodyHeight = 144;
+
+  /// Tile height for a card drawn at [width]. The grid needs this up front —
+  /// it places tiles without measuring them — so it must be derived from the
+  /// same numbers the card lays itself out with rather than guessed.
+  static double heightFor(double width) => width / coverAspect + bodyHeight;
 
   @override
   State<SaveCard> createState() => _SaveCardState();
@@ -92,8 +120,8 @@ class _SaveCardState extends State<SaveCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(
-                  height: SaveCard.coverHeight,
+                AspectRatio(
+                  aspectRatio: SaveCard.coverAspect,
                   child: _Cover(path: widget.thumbnailPath),
                 ),
                 Expanded(
@@ -269,9 +297,12 @@ class _Cover extends StatelessWidget {
   const _Cover({required this.path});
   final String? path;
 
-  /// Cards are ~320 logical px wide; 2x covers retina without decoding a
-  /// full-resolution screenshot into memory for a thumbnail.
-  static const int _decodeWidth = 640;
+  /// 2x the widest a card ever gets covers retina without decoding a
+  /// full-resolution screenshot into memory for a thumbnail. Derived rather
+  /// than typed out, so it cannot drift if the card is ever resized, and taken
+  /// from the maximum rather than the current width so that resizing a window
+  /// never re-decodes every visible image.
+  static const int _decodeWidth = SaveCard.maxWidth * 2 ~/ 1;
 
   @override
   Widget build(BuildContext context) {

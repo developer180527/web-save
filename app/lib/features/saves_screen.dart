@@ -5,12 +5,14 @@
 // thing to check when reviewing new UI here.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../shell/layout_scope.dart';
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
 import 'save_card.dart';
 import 'save_detail.dart';
+import 'add_save_sheet.dart';
 import 'save_row.dart';
 import 'saves_controller.dart';
 
@@ -23,17 +25,80 @@ class SavesScreen extends StatefulWidget {
   State<SavesScreen> createState() => _SavesScreenState();
 }
 
-class _SavesScreenState extends State<SavesScreen> {
+class _SavesScreenState extends State<SavesScreen> with WidgetsBindingObserver {
   SavesController get _controller => widget.controller;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_surfaceErrors);
+    WidgetsBinding.instance.addObserver(this);
+    _controller.startPolling();
+    // Also on cold start, which resume alone does not cover.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerClipboard());
+  }
+
+  /// The last clipboard link we offered, so returning to the app repeatedly
+  /// with the same link on the clipboard does not nag.
+  String? _offered;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _controller.startPolling();
+      // Catch up immediately rather than waiting out a tick — coming back to
+      // the window is exactly when a save made elsewhere should already be
+      // there.
+      _controller.load(quiet: true);
+      _offerClipboard();
+    } else {
+      _controller.stopPolling();
+    }
+  }
+
+  /// Offer to save a link sitting on the clipboard.
+  ///
+  /// A bar, not a dialog: coming back to the app to do something else and
+  /// being interrupted by a modal about a link you copied for another reason
+  /// is the behaviour that makes people distrust clipboard access. This can be
+  /// ignored by doing nothing.
+  Future<void> _offerClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text == null || text.isEmpty || text == _offered) return;
+      if (!await looksLikeUrl(text: text)) return;
+      // Already saved: offering it again is noise.
+      if (_controller.saves.any((s) => s.url == text)) return;
+      if (!mounted) return;
+      _offered = text;
+      final ws = context.ws;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: ws.panel,
+          duration: const Duration(seconds: 8),
+          content: Text(
+            'Link on your clipboard: $text',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: ws.text, fontSize: 12.5),
+          ),
+          action: SnackBarAction(
+            label: 'Paste & Add',
+            textColor: ws.accent,
+            onPressed: () => _controller.addByUrl(text),
+          ),
+        ),
+      );
+    } catch (_) {
+      // An unreadable clipboard is not worth reporting; the add button works.
+    }
   }
 
   @override
   void dispose() {
+    _controller.stopPolling();
+    WidgetsBinding.instance.removeObserver(this);
     // Owned by HomeShell, so listen and let go — never dispose it here.
     _controller.removeListener(_surfaceErrors);
     super.dispose();
@@ -163,31 +228,83 @@ class _SavesScreenState extends State<SavesScreen> {
       );
     }
 
-    // A max-extent delegate rather than a fixed column count, so the grid
-    // reflows as the pane is resized without the app choosing breakpoints for
-    // it. `builder` keeps it lazy: only visible cards are ever built, which
-    // is what makes a few thousand image-bearing cards affordable.
-    return GridView.builder(
-      padding: EdgeInsets.all(ws.cardPadding),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 340,
-        mainAxisExtent: 300,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: _controller.saves.length,
-      itemBuilder: (context, i) {
-        final save = _controller.saves[i];
-        return SaveCard(
-          save: save,
-          selected: save.id == _controller.selected?.id,
-          checking: _controller.isChecking(save.id),
-          thumbnailPath: _controller.thumbnailPath(save),
-          onTap: () => _open(save),
-          onDoubleTap: context.layout.showsDetailPane
-              ? () => _launch(save)
-              : null,
-          controller: _controller,
+    // The grid fills the pane: it picks the column count that keeps cards
+    // inside `SaveCard`'s width band, then hands the columns every point of
+    // the available width.
+    //
+    // A max-extent delegate looks like the obvious choice and is what this
+    // started as, but it divides the width evenly with no lower bound, so a
+    // tile floats anywhere between half and all of `maxCrossAxisExtent` — and
+    // because the cover was a constant *height* back then, every drag of the
+    // window edge changed the cover's shape and `BoxFit.cover` re-cropped
+    // every screenshot live. Pinning the cover's aspect ratio instead (see
+    // `SaveCard.coverAspect`) fixed the re-cropping at the source, which is
+    // what lets the cards flex here without the grid squirming. A fixed card
+    // width also works, but it throws away up to a full card of width as an
+    // empty margin down both sides.
+    //
+    // `builder` still only builds what is visible, so a few thousand
+    // image-bearing cards stay affordable.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 12.0;
+
+        // Only the margin actually applied below is subtracted. Reserving
+        // padding here that the grid never uses silently costs a whole column
+        // whenever the window sits near a boundary.
+        final margin = ws.cardPadding;
+        final available = constraints.maxWidth - margin * 2;
+
+        // Derived from the *minimum* width, so this is the most columns that
+        // can fit; the cards then stretch to consume the remainder. At least
+        // one column even in a pane narrower than a card, where the card is
+        // allowed to be the thing that overflows rather than the layout
+        // breaking.
+        final columns = ((available + gap) / (SaveCard.minWidth + gap))
+            .floor()
+            .clamp(1, 12);
+
+        // Exact fill. Only clamps at the top end — a very wide pane with the
+        // 12-column ceiling reached — and whatever it clamps away goes back
+        // to the margin, which is the one case where a margin is the right
+        // answer rather than cards the size of dinner plates.
+        final cardWidth = ((available - (columns - 1) * gap) / columns).clamp(
+          0.0,
+          SaveCard.maxWidth,
+        );
+        final gridWidth = columns * cardWidth + (columns - 1) * gap;
+
+        return Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: gridWidth,
+            child: GridView.builder(
+              padding: EdgeInsets.symmetric(vertical: ws.cardPadding),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                // Derived from the width the cards actually got, so the tile
+                // is exactly as tall as the card wants to be at that width.
+                mainAxisExtent: SaveCard.heightFor(cardWidth),
+                crossAxisSpacing: gap,
+                mainAxisSpacing: gap,
+              ),
+              itemCount: _controller.saves.length,
+              itemBuilder: (context, i) {
+                final save = _controller.saves[i];
+                return SaveCard(
+                  save: save,
+                  selected: save.id == _controller.selected?.id,
+                  checking: _controller.isChecking(save.id),
+                  thumbnailPath: _controller.thumbnailPath(save),
+                  onTap: () => _open(save),
+                  onDoubleTap: context.layout.showsDetailPane
+                      ? () => _launch(save)
+                      : null,
+                  controller: _controller,
+                );
+              },
+            ),
+          ),
         );
       },
     );
@@ -220,6 +337,14 @@ class _Header extends StatelessWidget {
         children: [
           Expanded(child: _SearchBar(onChanged: controller.search)),
           const SizedBox(width: 10),
+          // Every platform needs this: the browser extension is the only
+          // other way in, and on iOS there is no extension at all.
+          IconButton(
+            onPressed: () => showAddSaveSheet(context, controller),
+            icon: const Icon(Icons.add, size: 19),
+            tooltip: 'Add a link',
+            color: context.ws.text,
+          ),
           _ViewToggle(controller: controller),
         ],
       ),

@@ -19,7 +19,7 @@ class _OfflineController extends SavesController {
   int loads = 0;
 
   @override
-  Future<void> load() async {
+  Future<void> load({bool quiet = false}) async {
     loads++;
   }
 }

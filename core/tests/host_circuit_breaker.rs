@@ -111,7 +111,10 @@ fn an_unreachable_host_is_probed_to_the_threshold_and_no_further() {
     let summary = monitor.run_due();
 
     assert_eq!(summary.checked, 3, "probed past the threshold");
-    assert_eq!(summary.dead, 3);
+    // Refused connections are transport failures: we never reached a server,
+    // so the verdict is "couldn't get there", never "it's gone".
+    assert_eq!(summary.unreachable, 3);
+    assert_eq!(summary.dead, 0);
     assert_eq!(summary.skipped, 17);
     assert_eq!(summary.hosts_unreachable, 1);
     assert!(!summary.cancelled && !summary.budget_exhausted);
@@ -188,7 +191,13 @@ fn a_live_host_serving_404s_never_trips_the_breaker() {
     let summary = monitor.run_due();
 
     assert_eq!(summary.checked, 8, "a reachable host must be fully checked");
-    assert_eq!(summary.dead, 8, "and each of its 404s judged individually");
+    // Judged individually — 8 verdicts, not one host-level write-off. They
+    // land in `unreachable` rather than `dead` because the test server is on
+    // loopback, and a private address is never condemned: `192.168.1.10` is
+    // a different machine on every network, so a 404 from one says nothing
+    // about the resource you saved.
+    assert_eq!(summary.unreachable, 8, "and each of its 404s judged individually");
+    assert_eq!(summary.dead, 0, "a private host is never marked dead");
     assert_eq!(summary.skipped, 0);
     assert_eq!(summary.hosts_unreachable, 0);
 }
@@ -276,7 +285,7 @@ fn a_zero_threshold_checks_everything() {
         summary,
         SweepSummary {
             checked: 12,
-            dead: 12,
+            unreachable: 12,
             ..Default::default()
         }
     );

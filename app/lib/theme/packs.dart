@@ -37,6 +37,7 @@ const daylight = WebSaveTheme(
     active: Color(0xFF2E9E5B), // --green
     changed: Color(0xFFC98A1B), // --amber
     redirected: Color(0xFF3578C9), // --blue
+    unreachable: Color(0xFF8A6D3B), // muted amber: a warning, not a verdict
     dead: Color(0xFFD4373E), // --red
     unchecked: Color(0xFF9A9AA3), // --gray
   ),
@@ -63,6 +64,7 @@ const midnight = WebSaveTheme(
     active: Color(0xFF46B97A),
     changed: Color(0xFFD9A13B),
     redirected: Color(0xFF5E9FDD),
+    unreachable: Color(0xFFBE9152),
     dead: Color(0xFFE06363),
     unchecked: Color(0xFF767676),
   ),

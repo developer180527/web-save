@@ -37,7 +37,7 @@ pub struct SaveView {
     pub thumbnail: String,
     pub favorite: bool,
     pub is_read: bool,
-    /// One of: unchecked, active, changed, redirected, dead.
+    /// One of: unchecked, active, changed, redirected, unreachable, dead.
     pub status: String,
     pub http_status: Option<i64>,
     pub tags: Vec<String>,
@@ -74,6 +74,10 @@ pub struct StatsView {
     pub active: i64,
     pub changed: i64,
     pub redirected: i64,
+    /// Couldn't be reached from here — a site that's down, or a
+    /// Tailscale/VPN/LAN address we're not currently on the network for.
+    /// Never auto-deleted.
+    pub unreachable: i64,
     pub dead: i64,
 }
 
@@ -154,6 +158,7 @@ pub fn vault_stats() -> Result<StatsView, String> {
         active: s.active,
         changed: s.changed,
         redirected: s.redirected,
+        unreachable: s.unreachable,
         dead: s.dead,
     })
 }
@@ -372,21 +377,55 @@ pub fn run_import(content: String) -> Result<ImportPreview, String> {
     })
 }
 
-/// Serialize the whole vault.
+/// An export, plus what it left out — so the UI can say so rather than
+/// silently writing a smaller file than the user expected.
+pub struct ExportResult {
+    /// The serialized vault, ready to write to disk.
+    pub content: String,
+    /// Saves written to the file.
+    pub exported: u32,
+    /// Dead links omitted (see [`websave_core::export::exportable`]).
+    pub skipped_dead: u32,
+}
+
+/// What an export would contain right now, without serializing anything.
 ///
-/// `"json"` keeps the most detail and now imports back in, so it is the
-/// format for moving a vault between devices. `"html"` is Netscape bookmarks,
-/// which any browser reads as well as this app's own importer, and is the one
-/// to hand to something that is not WebSave. Anything not "json" gives HTML.
-pub fn export_vault(format: String) -> Result<String, String> {
+/// Lets the transfer screen tell the user that dead links will be left out
+/// *before* they pick a destination, instead of explaining it afterwards.
+pub fn export_preview() -> Result<ExportResult, String> {
     let saves = vault()?.all_saves().map_err(|e| e.to_string())?;
+    let (_, summary) = websave_core::export::exportable(&saves);
+    Ok(ExportResult {
+        content: String::new(),
+        exported: summary.exported as u32,
+        skipped_dead: summary.skipped_dead as u32,
+    })
+}
+
+/// Serialize the vault.
+///
+/// `"json"` keeps the most detail and imports back in, so it is the format
+/// for moving a vault between devices. `"html"` is Netscape bookmarks, which
+/// any browser reads as well as this app's own importer, and is the one to
+/// hand to something that is not WebSave. Anything not "json" gives HTML.
+///
+/// Links a server confirmed gone are excluded; the count comes back in the
+/// result so the UI can report it.
+pub fn export_vault(format: String) -> Result<ExportResult, String> {
+    let all = vault()?.all_saves().map_err(|e| e.to_string())?;
+    let (saves, summary) = websave_core::export::exportable(&all);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    Ok(match format.as_str() {
+    let content = match format.as_str() {
         "json" => websave_core::export::to_json(&saves, now),
         _ => websave_core::export::to_netscape_html(&saves),
+    };
+    Ok(ExportResult {
+        content,
+        exported: summary.exported as u32,
+        skipped_dead: summary.skipped_dead as u32,
     })
 }
 
@@ -520,4 +559,61 @@ pub fn extension_status() -> Result<ExtensionStatus, String> {
         last_seen,
         version,
     })
+}
+
+// ---- adding by hand ----
+
+/// Add a save from a URL typed or pasted into the app.
+///
+/// Until now every save arrived through the browser extension, which means
+/// iOS — where there is no extension and no capture server — could only ever
+/// look at a vault it had no way to add to.
+///
+/// The title is left empty when not given rather than guessed at: the link
+/// checker fills in title, description and favicon on its first pass, and a
+/// placeholder written here would be mistaken for real metadata and never
+/// replaced.
+pub fn add_save_by_url(url: String, title: Option<String>) -> Result<SaveView, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("Enter a link to save.".into());
+    }
+
+    // Accept a bare host the way a browser bar does. Typing "example.com" and
+    // being told it is not a link is a worse answer than assuming https.
+    let normalized = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}")
+    };
+
+    let parsed = url::Url::parse(&normalized).map_err(|_| "That is not a link.".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Only http and https links can be saved.".into());
+    }
+
+    let save = vault()?
+        .add_save(websave_core::NewSave {
+            url: parsed.to_string(),
+            title: title.unwrap_or_default(),
+            description: String::new(),
+            favicon_url: String::new(),
+            tags: Vec::new(),
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(SaveView::from(save))
+}
+
+/// Whether a string looks like something worth offering to save.
+///
+/// Used against the clipboard on resume. Deliberately strict — a bare host is
+/// accepted when typed, because typing is an explicit act, but suggesting a
+/// save for every "example.com" that passes through the clipboard would be
+/// noise.
+pub fn looks_like_url(text: String) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.len() > 2048 || trimmed.split_whitespace().count() > 1 {
+        return false;
+    }
+    url::Url::parse(trimmed).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
 }

@@ -1942,3 +1942,22 @@ input:focus:not(:focus-visible) {
   display: flex;
   flex-direction: column;
 }
+
+/* Unreachable: a warning, not a verdict. Deliberately not red — a link on a
+   VPN/LAN we can't currently see is not broken, and must not read as rot. */
+.status-dot.status-unreachable {
+  background: var(--gray);
+}
+
+.status-pill.status-unreachable {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 15%, transparent);
+}
+
+.nav-icon-unreachable {
+  color: var(--gray);
+}
+
+.nav-item.active .nav-icon-unreachable {
+  color: var(--gray);
+}

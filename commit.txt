@@ -1,0 +1,18 @@
+Import JSON, and fix export on a clean machine
+
+JSON exports could not be imported. export_vault wrote them and
+import::parse had no JSON branch, so the file fell through to the URL
+list scanner, which reads line by line and does not recognise a "url"
+field — a file full of links imported as zero. Since export writes the
+format, import has to read it.
+
+parse_json takes the {"saves": [...]} wrapper this app writes as well as
+a bare array, and returns None rather than an empty list when the content
+is not really JSON, so parse can still fall through to sniffing the other
+formats instead of reporting an empty import for a file it guessed wrong
+about.
+
+Export creates its directory before writing. getTemporaryDirectory
+reports the path the OS would use, but the per-app Caches directory does
+not exist until something writes there, so a first export on a clean
+machine threw PathNotFoundException.

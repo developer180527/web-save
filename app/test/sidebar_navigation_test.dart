@@ -20,7 +20,7 @@ import 'package:websave_app/theme/websave_theme.dart';
 /// bookkeeping under test is the real implementation.
 class _OfflineController extends SavesController {
   @override
-  Future<void> load() async {}
+  Future<void> load({bool quiet = false}) async {}
 }
 
 Future<void> _pump(WidgetTester tester, VaultSidebar sidebar) async {

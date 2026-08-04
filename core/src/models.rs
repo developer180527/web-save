@@ -13,7 +13,13 @@ pub enum LinkStatus {
     Changed,
     /// The URL now resolves to a meaningfully different location.
     Redirected,
-    /// Unreachable: DNS/transport failure, 404/410, or server error.
+    /// Could not be reached from here: DNS/connection/TLS failure, a timeout,
+    /// or a server error. Says nothing about whether the resource still
+    /// exists — a private LAN/VPN/Tailscale host looks exactly like this from
+    /// the wrong network — so these are **never** auto-deleted.
+    Unreachable,
+    /// Confirmed gone: a working server answered 404 or 410. This is the only
+    /// status the Trash grace period will permanently delete.
     Dead,
 }
 
@@ -24,6 +30,7 @@ impl LinkStatus {
             LinkStatus::Active => "active",
             LinkStatus::Changed => "changed",
             LinkStatus::Redirected => "redirected",
+            LinkStatus::Unreachable => "unreachable",
             LinkStatus::Dead => "dead",
         }
     }
@@ -33,6 +40,7 @@ impl LinkStatus {
             "active" => LinkStatus::Active,
             "changed" => LinkStatus::Changed,
             "redirected" => LinkStatus::Redirected,
+            "unreachable" => LinkStatus::Unreachable,
             "dead" => LinkStatus::Dead,
             _ => LinkStatus::Unchecked,
         }
@@ -40,7 +48,7 @@ impl LinkStatus {
 }
 
 /// A saved web reference with its full metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Save {
     pub id: i64,
@@ -135,5 +143,6 @@ pub struct VaultStats {
     pub active: i64,
     pub changed: i64,
     pub redirected: i64,
+    pub unreachable: i64,
     pub dead: i64,
 }

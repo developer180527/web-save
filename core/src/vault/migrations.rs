@@ -200,6 +200,28 @@ CREATE TABLE host_locations (
 ALTER TABLE host_locations ADD COLUMN asn INTEGER;
 ALTER TABLE host_locations ADD COLUMN asn_org TEXT NOT NULL DEFAULT '';
 "#,
+    // v11: amnesty for links condemned by the old classifier.
+    //
+    // Until now *any* failure to fetch — DNS, refused connection, TLS,
+    // timeout, 5xx — was recorded as `dead`, which starts a 30-day countdown
+    // to permanent deletion. That is correct for a page a server says is
+    // gone, and badly wrong for a Tailscale/LAN/VPN host that is simply not
+    // routable from wherever the checker happened to run. Anyone who saved a
+    // private-network service and then closed the VPN had those saves sitting
+    // on death row.
+    //
+    // `dead` now means only "a working server answered 404/410", so every
+    // pre-existing verdict was reached under different rules and cannot be
+    // trusted. Clearing `dead_since` stops every countdown; the status is
+    // reset so the next sweep re-decides under the new rules. No save is
+    // deleted by this migration, and a genuinely dead link is simply
+    // re-condemned within minutes — with its full grace period restored.
+    r#"
+UPDATE saves
+   SET status = 'unchecked',
+       dead_since = NULL
+ WHERE status = 'dead';
+"#,
 ];
 
 pub(super) fn migrate(conn: &Connection) -> Result<()> {

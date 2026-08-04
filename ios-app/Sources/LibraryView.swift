@@ -167,6 +167,9 @@ struct StatusBadge: View {
         case "active": return .green
         case "changed": return .orange
         case "redirected": return .blue
+        // Amber, not red: a link on a network we're not attached to is not
+        // broken, and must not be presented as rot.
+        case "unreachable": return .orange
         case "dead": return .red
         default: return .secondary
         }

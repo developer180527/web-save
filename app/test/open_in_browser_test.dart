@@ -11,7 +11,7 @@ class _RecordingController extends SavesController {
   final writes = <bool>[];
 
   @override
-  Future<void> load() async {}
+  Future<void> load({bool quiet = false}) async {}
 
   // markRead routes through _apply, which calls the bridge. Recording at this
   // level keeps the one-way decision under test without a vault.

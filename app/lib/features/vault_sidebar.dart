@@ -114,6 +114,14 @@ class VaultSidebar extends StatelessWidget {
               _HealthRow(
                 onSelected: onShowSaves,
                 controller: controller,
+                filter: SaveFilter.unreachable,
+                icon: Icons.cloud_off_outlined,
+                label: 'Unreachable',
+                count: stats?.unreachable.toInt(),
+              ),
+              _HealthRow(
+                onSelected: onShowSaves,
+                controller: controller,
                 filter: SaveFilter.dead,
                 icon: Icons.cancel_outlined,
                 label: 'Dead',

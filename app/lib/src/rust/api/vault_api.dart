@@ -116,14 +116,23 @@ Future<ImportPreview> previewImport({required String content}) =>
 Future<ImportPreview> runImport({required String content}) =>
     RustLib.instance.api.crateApiVaultApiRunImport(content: content);
 
-/// Serialize the whole vault.
+/// What an export would contain right now, without serializing anything.
 ///
-/// `"html"` is the round-trip format: Netscape bookmarks, which both any
-/// browser *and* this app's own importer read. `"json"` carries more fields
-/// (status, timestamps, archive stamps) but the importer does not parse it —
-/// it is for backup and for other tools, not for moving a vault between
-/// devices. Anything that is not "json" gives HTML.
-Future<String> exportVault({required String format}) =>
+/// Lets the transfer screen tell the user that dead links will be left out
+/// *before* they pick a destination, instead of explaining it afterwards.
+Future<ExportResult> exportPreview() =>
+    RustLib.instance.api.crateApiVaultApiExportPreview();
+
+/// Serialize the vault.
+///
+/// `"json"` keeps the most detail and imports back in, so it is the format
+/// for moving a vault between devices. `"html"` is Netscape bookmarks, which
+/// any browser reads as well as this app's own importer, and is the one to
+/// hand to something that is not WebSave. Anything not "json" gives HTML.
+///
+/// Links a server confirmed gone are excluded; the count comes back in the
+/// result so the UI can report it.
+Future<ExportResult> exportVault({required String format}) =>
     RustLib.instance.api.crateApiVaultApiExportVault(format: format);
 
 /// Whether this app is registered to start at login.
@@ -155,6 +164,60 @@ Future<bool> supportsLaunchAtLogin() =>
 /// working when the engine is running and this app is merely looking on.
 Future<ExtensionStatus> extensionStatus() =>
     RustLib.instance.api.crateApiVaultApiExtensionStatus();
+
+/// Add a save from a URL typed or pasted into the app.
+///
+/// Until now every save arrived through the browser extension, which means
+/// iOS — where there is no extension and no capture server — could only ever
+/// look at a vault it had no way to add to.
+///
+/// The title is left empty when not given rather than guessed at: the link
+/// checker fills in title, description and favicon on its first pass, and a
+/// placeholder written here would be mistaken for real metadata and never
+/// replaced.
+Future<SaveView> addSaveByUrl({required String url, String? title}) =>
+    RustLib.instance.api.crateApiVaultApiAddSaveByUrl(url: url, title: title);
+
+/// Whether a string looks like something worth offering to save.
+///
+/// Used against the clipboard on resume. Deliberately strict — a bare host is
+/// accepted when typed, because typing is an explicit act, but suggesting a
+/// save for every "example.com" that passes through the clipboard would be
+/// noise.
+Future<bool> looksLikeUrl({required String text}) =>
+    RustLib.instance.api.crateApiVaultApiLooksLikeUrl(text: text);
+
+/// An export, plus what it left out — so the UI can say so rather than
+/// silently writing a smaller file than the user expected.
+class ExportResult {
+  /// The serialized vault, ready to write to disk.
+  final String content;
+
+  /// Saves written to the file.
+  final int exported;
+
+  /// Dead links omitted (see [`websave_core::export::exportable`]).
+  final int skippedDead;
+
+  const ExportResult({
+    required this.content,
+    required this.exported,
+    required this.skippedDead,
+  });
+
+  @override
+  int get hashCode =>
+      content.hashCode ^ exported.hashCode ^ skippedDead.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExportResult &&
+          runtimeType == other.runtimeType &&
+          content == other.content &&
+          exported == other.exported &&
+          skippedDead == other.skippedDead;
+}
 
 class ExtensionStatus {
   /// Last time the extension called the capture server, as a unix
@@ -347,7 +410,7 @@ class SaveView {
   final bool favorite;
   final bool isRead;
 
-  /// One of: unchecked, active, changed, redirected, dead.
+  /// One of: unchecked, active, changed, redirected, unreachable, dead.
   final String status;
   final PlatformInt64? httpStatus;
   final List<String> tags;
@@ -415,6 +478,11 @@ class StatsView {
   final PlatformInt64 active;
   final PlatformInt64 changed;
   final PlatformInt64 redirected;
+
+  /// Couldn't be reached from here — a site that's down, or a
+  /// Tailscale/VPN/LAN address we're not currently on the network for.
+  /// Never auto-deleted.
+  final PlatformInt64 unreachable;
   final PlatformInt64 dead;
 
   const StatsView({
@@ -425,6 +493,7 @@ class StatsView {
     required this.active,
     required this.changed,
     required this.redirected,
+    required this.unreachable,
     required this.dead,
   });
 
@@ -437,6 +506,7 @@ class StatsView {
       active.hashCode ^
       changed.hashCode ^
       redirected.hashCode ^
+      unreachable.hashCode ^
       dead.hashCode;
 
   @override
@@ -451,6 +521,7 @@ class StatsView {
           active == other.active &&
           changed == other.changed &&
           redirected == other.redirected &&
+          unreachable == other.unreachable &&
           dead == other.dead;
 }
 

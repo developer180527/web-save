@@ -6,7 +6,40 @@
 //! * **Netscape HTML** — the universal bookmark format, so the export can be
 //!   read by any browser *and* by our own importer (round-trip).
 
-use crate::models::Save;
+use crate::models::{LinkStatus, Save};
+
+/// What an export contains, and what it deliberately leaves behind.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExportSummary {
+    pub exported: usize,
+    /// Links a working server said are gone (404/410), which are omitted.
+    pub skipped_dead: usize,
+}
+
+/// The saves that belong in an export, and a count of what was dropped.
+///
+/// Dead links are excluded. An export is either a backup or a hand-off to
+/// another tool, and neither is served by carrying addresses that are known
+/// not to resolve — re-importing a backup would resurrect rot the vault had
+/// already identified.
+///
+/// Only [`LinkStatus::Dead`] is dropped, and that status now requires a
+/// working server to have answered 404/410. Anything merely
+/// [`LinkStatus::Unreachable`] — a site that was down, or a Tailscale/VPN/LAN
+/// address unreachable from wherever the check ran — is kept, because that
+/// verdict describes our vantage point rather than the resource. Excluding
+/// those would quietly drop a user's private bookmarks from their own backup.
+pub fn exportable(saves: &[Save]) -> (Vec<Save>, ExportSummary) {
+    let (keep, dropped): (Vec<Save>, Vec<Save>) = saves
+        .iter()
+        .cloned()
+        .partition(|s| s.status != LinkStatus::Dead);
+    let summary = ExportSummary {
+        exported: keep.len(),
+        skipped_dead: dropped.len(),
+    };
+    (keep, summary)
+}
 
 /// Full-fidelity JSON backup: `{ "app", "version", "exportedAt", "saves": [...] }`.
 pub fn to_json(saves: &[Save], exported_at: i64) -> String {
@@ -124,5 +157,54 @@ mod tests {
         assert_eq!(items[0].url, "https://example.com/a?x=1&y=2");
         assert_eq!(items[0].tags, vec!["rust", "web"]);
         assert_eq!(items[0].created_at, Some(1_700_000_000));
+    }
+}
+
+#[cfg(test)]
+mod export_filter_tests {
+    use super::*;
+    use crate::models::LinkStatus;
+
+    fn save_with(id: i64, status: LinkStatus) -> Save {
+        Save {
+            id,
+            url: format!("https://example.com/{id}"),
+            status,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dead_links_are_excluded_but_unreachable_ones_are_kept() {
+        let saves = vec![
+            save_with(1, LinkStatus::Active),
+            save_with(2, LinkStatus::Dead),
+            // A private host we couldn't route to must stay in the backup:
+            // dropping it would lose the user's own data over a verdict that
+            // describes the network, not the link.
+            save_with(3, LinkStatus::Unreachable),
+            save_with(4, LinkStatus::Changed),
+            save_with(5, LinkStatus::Unchecked),
+        ];
+
+        let (kept, summary) = exportable(&saves);
+
+        assert_eq!(summary.exported, 4);
+        assert_eq!(summary.skipped_dead, 1);
+        assert!(
+            !kept.iter().any(|s| s.status == LinkStatus::Dead),
+            "no dead link reaches the file"
+        );
+        assert!(kept.iter().any(|s| s.status == LinkStatus::Unreachable));
+    }
+
+    #[test]
+    fn an_empty_vault_exports_cleanly() {
+        let (kept, summary) = exportable(&[]);
+        assert!(kept.is_empty());
+        assert_eq!(summary, ExportSummary::default());
+        // And the serializers must still produce valid, parseable output.
+        assert!(to_json(&kept, 0).contains("\"saves\""));
+        assert!(to_netscape_html(&kept).contains("</DL>"));
     }
 }

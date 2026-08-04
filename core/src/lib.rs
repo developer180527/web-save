@@ -34,6 +34,7 @@ pub mod import;
 pub mod models;
 pub mod monitor;
 pub mod probe;
+pub mod reachability;
 pub mod schedule;
 mod vault;
 
@@ -46,5 +47,6 @@ pub use models::{
 };
 pub use monitor::{Monitor, MonitorConfig, MonitorEvent, MonitorHandle, SweepSummary};
 pub use probe::{check_url, CheckOutcome, CheckTarget, HASH_ALGO};
+pub use reachability::{private_host, PrivateHost};
 pub(crate) use vault::now;
 pub use vault::{Vault, ASSETS_DIR, DB_FILE, THUMBS_DIR};

@@ -17,3 +17,4 @@ crate-type = ["cdylib", "staticlib", "lib"]
 websave-core = { path = "../core" }
 flutter_rust_bridge = "=2.12.0"
 auto-launch = "0.6.0"
+url = "2.5.8"

@@ -16,6 +16,7 @@ impl Vault {
                     COALESCE(SUM(status = 'active'), 0),
                     COALESCE(SUM(status = 'changed'), 0),
                     COALESCE(SUM(status = 'redirected'), 0),
+                    COALESCE(SUM(status = 'unreachable'), 0),
                     COALESCE(SUM(status = 'dead'), 0)
              FROM saves",
             [],
@@ -28,7 +29,8 @@ impl Vault {
                     active: r.get(4)?,
                     changed: r.get(5)?,
                     redirected: r.get(6)?,
-                    dead: r.get(7)?,
+                    unreachable: r.get(7)?,
+                    dead: r.get(8)?,
                 })
             },
         )?;

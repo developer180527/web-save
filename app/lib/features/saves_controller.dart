@@ -14,6 +14,8 @@
 // so the UI cannot drift from the vault -- and a 500-row list never refetches
 // because one star changed.
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../src/rust/api/vault_api.dart';
@@ -27,6 +29,7 @@ enum SaveFilter {
   active,
   changed,
   redirected,
+  unreachable,
   dead,
   unchecked,
 }
@@ -38,6 +41,7 @@ extension SaveFilterQuery on SaveFilter {
     SaveFilter.active => 'active',
     SaveFilter.changed => 'changed',
     SaveFilter.redirected => 'redirected',
+    SaveFilter.unreachable => 'unreachable',
     SaveFilter.dead => 'dead',
     SaveFilter.unchecked => 'unchecked',
     _ => null,
@@ -122,11 +126,19 @@ class SavesController extends ChangeNotifier {
   String? get error => _error;
   bool isChecking(int id) => _checking.contains(id);
 
-  Future<void> load() async {
+  /// Fetch the list, stats and tags for the current narrowing.
+  ///
+  /// [quiet] skips the loading state and the notification that goes with it,
+  /// for the poll below. Without it every poll would flash a spinner over a
+  /// list that is usually about to be identical, and would clear any error
+  /// the user had not read yet.
+  Future<void> load({bool quiet = false}) async {
     final current = criteria.value;
-    _loading = true;
-    _error = null;
-    notifyListeners();
+    if (!quiet) {
+      _loading = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
       final results = await Future.wait([
         listSaves(
@@ -157,11 +169,42 @@ class SavesController extends ChangeNotifier {
         selection.value = null;
       }
     } catch (e) {
-      _error = '$e';
+      // A failed poll is not worth reporting: the vault is on local disk, the
+      // next tick is seconds away, and replacing a working list with an error
+      // banner because one read lost a race would be worse than silence.
+      if (!quiet) _error = '$e';
     } finally {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  Timer? _poll;
+
+  /// Re-read the vault on a timer.
+  ///
+  /// The browser extension does not talk to this app: it posts to the Tauri
+  /// app's capture server, which writes the vault this app reads. So a save
+  /// made while this window is open lands on disk with nothing to tell us it
+  /// happened, and the list sits on whatever it fetched last.
+  ///
+  /// Polling rather than watching the file because SQLite in WAL mode commits
+  /// into websave.db-wal rather than the database, so a naive mtime watch on
+  /// the obvious path sees nothing. Re-reading a local SQLite file every few
+  /// seconds costs nothing measurable.
+  void startPolling() {
+    _poll?.cancel();
+    _poll = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => load(quiet: true),
+    );
+  }
+
+  /// Stop while the app is in the background — there is nobody looking at the
+  /// results, and on a phone the wakeups are charged to the battery.
+  void stopPolling() {
+    _poll?.cancel();
+    _poll = null;
   }
 
   Future<void> search(String query) {
@@ -197,6 +240,18 @@ class SavesController extends ChangeNotifier {
 
   Future<void> toggleRead(SaveView save) =>
       _apply(() => setRead(id: save.id, isRead: !save.isRead));
+
+  /// Add a save from a typed or pasted link, and select it.
+  ///
+  /// Reloads rather than splicing the row in: the new save has to land in the
+  /// right place under the current sort and narrowing, and it may not belong
+  /// in the current view at all.
+  Future<SaveView> addByUrl(String url) async {
+    final save = await addSaveByUrl(url: url);
+    await load();
+    selection.value = save;
+    return save;
+  }
 
   /// Mark read, if it is not already.
   ///
@@ -278,6 +333,7 @@ class SavesController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _poll?.cancel();
     criteria.dispose();
     statsView.dispose();
     tagCounts.dispose();

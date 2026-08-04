@@ -54,18 +54,20 @@ fn a_sweep_drains_the_due_queue_and_persists_every_result() {
     let summary = monitor.run_due();
 
     assert_eq!(summary.checked, 10);
-    assert_eq!(summary.dead, 10);
-    assert!(!summary.cancelled && !summary.budget_exhausted);
+    // Refused connections on loopback: never reached a server, and a private
+    // address at that — so "unreachable", not "dead".
+    assert_eq!(summary.unreachable, 10);
     assert_eq!(
         vault
             .list_saves(&ListQuery {
-                status: Some(LinkStatus::Dead),
+                status: Some(LinkStatus::Unreachable),
                 ..Default::default()
             })
             .unwrap()
             .len(),
         10
     );
+    assert!(!summary.cancelled && !summary.budget_exhausted);
 
     // The whole point: a second sweep right afterwards has nothing to do,
     // because everything just checked is scheduled into the future.

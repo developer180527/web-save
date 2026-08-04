@@ -3,6 +3,7 @@ export type LinkStatus =
   | "active"
   | "changed"
   | "redirected"
+  | "unreachable"
   | "dead";
 
 export interface Save {
@@ -89,6 +90,7 @@ export interface VaultStats {
   active: number;
   changed: number;
   redirected: number;
+  unreachable: number;
   dead: number;
 }
 

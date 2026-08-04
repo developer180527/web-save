@@ -62,8 +62,11 @@ impl Default for Cadence {
 /// capped at [`HOT_MAX_INTERVAL_SECS`].
 pub fn next_cadence(status: LinkStatus, previous: Cadence, hot: bool) -> Cadence {
     match status {
-        // Fixed cadence — see DEAD_INTERVAL_SECS.
-        LinkStatus::Dead => Cadence {
+        // Fixed cadence — see DEAD_INTERVAL_SECS. `Unreachable` shares it:
+        // a private host we couldn't route to should be retried promptly and
+        // often, because the fix is usually "the user reconnected to the
+        // VPN", and that recovery should show up quickly.
+        LinkStatus::Dead | LinkStatus::Unreachable => Cadence {
             interval_secs: DEAD_INTERVAL_SECS,
             stable_streak: 0,
         },

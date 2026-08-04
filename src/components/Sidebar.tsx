@@ -41,6 +41,7 @@ const STATUS_VIEWS: LinkStatus[] = [
   "active",
   "changed",
   "redirected",
+  "unreachable",
   "unchecked",
 ];
 
@@ -67,6 +68,7 @@ export default function Sidebar({
     active: <CheckCircleIcon size={15} />,
     changed: <RefreshIcon size={15} />,
     redirected: <RedirectIcon size={15} />,
+    unreachable: <HelpCircleIcon size={15} />,
     dead: <TrashIcon size={15} />,
     unchecked: <HelpCircleIcon size={15} />,
   };

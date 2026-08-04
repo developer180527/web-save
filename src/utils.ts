@@ -29,7 +29,19 @@ export const STATUS_LABELS: Record<LinkStatus, string> = {
   active: "Active",
   changed: "Changed",
   redirected: "Redirected",
+  unreachable: "Unreachable",
   dead: "Dead",
+};
+
+/// Longer explanations, for tooltips and the detail panel.
+export const STATUS_HINTS: Record<LinkStatus, string> = {
+  unchecked: "Not checked yet.",
+  active: "Reachable and unchanged.",
+  changed: "Reachable, but the page content changed.",
+  redirected: "Now resolves somewhere meaningfully different.",
+  unreachable:
+    "Couldn't be reached from this machine — it may be on a network you're not connected to (Tailscale, VPN, LAN), or the server may be down. Never deleted automatically.",
+  dead: "A working server said this page is gone (404/410).",
 };
 
 /** First http(s) URL found in arbitrary text, or null. */

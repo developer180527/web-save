@@ -730,3 +730,66 @@ fn all_saves_returns_everything_with_tags_for_export() {
     let tagged = all.iter().find(|s| s.title == "A").unwrap();
     assert_eq!(tagged.tags, vec!["x"]);
 }
+
+/// Regression: a private-network save must never be deletable.
+///
+/// The original bug — a Tailscale service marked `dead` while off the tailnet,
+/// then permanently deleted 30 days later — needs the whole chain to hold.
+/// This asserts the last link in it: even when a save is in exactly the
+/// condemned state the purge looks for, a private host survives, because the
+/// purge re-checks the URL before destroying anything.
+#[test]
+fn private_hosts_are_never_purged_even_if_marked_dead() {
+    let (_dir, vault) = vault();
+    let private = save(
+        &vault,
+        "https://vault-server.taild29644.ts.net:9443",
+        "Vault",
+        &[],
+    );
+    let lan = save(&vault, "http://192.168.1.10/router", "Router", &[]);
+    let public = save(&vault, "https://gone.example/page", "Gone", &[]);
+
+    let dead = websave_core::CheckOutcome {
+        status: LinkStatus::Dead,
+        http_status: Some(404),
+        ..Default::default()
+    };
+    for id in [private.id, lan.id, public.id] {
+        vault.apply_check(id, &dead).unwrap();
+    }
+
+    // A negative grace period expires everything already dead.
+    let removed = vault.purge_expired_dead(-1).unwrap();
+    assert_eq!(removed, 1, "only the public host is purged");
+
+    assert!(
+        vault.get_save(private.id).is_ok(),
+        "Tailscale save survived the purge"
+    );
+    assert!(vault.get_save(lan.id).is_ok(), "LAN save survived the purge");
+    assert!(
+        matches!(vault.get_save(public.id), Err(Error::NotFound(_))),
+        "a genuinely dead public link is still collected"
+    );
+}
+
+/// `Unreachable` is not a deletion state: only server-confirmed `dead` is.
+#[test]
+fn unreachable_saves_are_not_trash_eligible() {
+    let (_dir, vault) = vault();
+    let s = save(&vault, "https://flaky.example/page", "Flaky", &[]);
+    vault
+        .apply_check(
+            s.id,
+            &websave_core::CheckOutcome {
+                status: LinkStatus::Unreachable,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert_eq!(vault.purge_expired_dead(-1).unwrap(), 0);
+    assert!(vault.get_save(s.id).is_ok());
+    assert_eq!(vault.stats().unwrap().unreachable, 1);
+}

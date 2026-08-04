@@ -47,6 +47,9 @@ pub struct SweepSummary {
     pub not_modified: usize,
     pub changed: usize,
     pub dead: usize,
+    /// Links we could not reach — transport failure, server error, or a
+    /// private host we're not currently on the network for. Never deleted.
+    pub unreachable: usize,
     /// Links skipped because their host had stopped answering. These were
     /// *not* judged — they keep their previous status and stay due.
     pub skipped: usize,
