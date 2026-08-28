@@ -145,3 +145,71 @@ mod tests {
         assert_eq!(code, WEBSAVE_BG_OK);
     }
 }
+
+// ---- Android ----
+//
+// Kotlin cannot call the C symbol above directly: the JVM resolves a native
+// method by a mangled name built from the package, class and method, so the
+// export has to be shaped to match. Cargokit builds this crate as a cdylib on
+// Android, so the .so is already inside the APK and System.loadLibrary finds
+// it without any extra packaging step.
+
+/// JNI entry for `LinkCheckWorker.nativeRunDueChecks`.
+///
+/// The name is not free-form: it must stay in lockstep with the Kotlin
+/// package, class and method, or the JVM raises UnsatisfiedLinkError at the
+/// first call rather than at load. Renaming or moving that class means
+/// renaming this.
+///
+/// Mirrors [`websave_run_due_checks`] — same return codes, same panic
+/// containment — differing only in unwrapping the Java string first.
+///
+/// # Safety
+///
+/// Called by the JVM with a valid environment and a valid string.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_venugopal_websave_1app_LinkCheckWorker_nativeRunDueChecks(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    vault_path: jni::objects::JString,
+) -> c_int {
+    // A panic unwinding into the JVM aborts the process, so this is caught
+    // here for the same reason as the C entry point.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let Ok(path) = env.get_string(&vault_path) else {
+            return WEBSAVE_BG_BAD_PATH;
+        };
+        let path: String = path.into();
+
+        let vault = match Vault::open(PathBuf::from(path)) {
+            Ok(vault) => Arc::new(vault),
+            Err(_) => return WEBSAVE_BG_VAULT_FAILED,
+        };
+
+        let config = MonitorConfig {
+            // Android's WorkManager is far more generous than iOS — ten
+            // minutes rather than thirty seconds — but a doze-mode wakeup is
+            // still not the moment to sweep a whole vault, and leftovers stay
+            // due for the next run either way.
+            max_per_sweep: Some(BACKGROUND_SWEEP_CAP),
+            ..MonitorConfig::default()
+        };
+
+        let summary = Monitor::new(vault.clone(), config).run_due();
+        vault.log_activity(
+            "info",
+            "background",
+            &format!(
+                "Checked {} link(s): {} unchanged, {} changed, {} dead, {} unreachable",
+                summary.checked,
+                summary.not_modified,
+                summary.changed,
+                summary.dead,
+                summary.unreachable
+            ),
+        );
+        c_int::try_from(summary.checked).unwrap_or(c_int::MAX)
+    }))
+    .unwrap_or(WEBSAVE_BG_PANICKED)
+}

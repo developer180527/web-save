@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 
 readonly ICON_DIR="Assets/AppIcon.icon"
 readonly FLAT="Assets/icon.png"
-readonly APP="app"
+readonly APP="web-save-app"
 
 # Background fill from icon.json's automatic-gradient (srgb 0.58188,0.21569,1).
 readonly PURPLE="#9437FF"
@@ -29,6 +29,9 @@ for tool in magick; do
   command -v "$tool" >/dev/null || { echo "need $tool (brew install imagemagick)" >&2; exit 1; }
 done
 [[ -f "$FLAT" ]] || { echo "missing $FLAT" >&2; exit 1; }
+# Fail loudly if the Flutter project moves again, rather than silently writing
+# icons into a directory nobody builds.
+[[ -f "$APP/pubspec.yaml" ]] || { echo "no Flutter project at $APP/" >&2; exit 1; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
