@@ -101,6 +101,26 @@ class SaveCard extends StatefulWidget {
 class _SaveCardState extends State<SaveCard> {
   bool _hovered = false;
 
+  /// The card's edge colour.
+  ///
+  /// The top side is lifted by `raisedEdge`, so the edge nearest the light
+  /// catches more of it than the sides and bottom. That asymmetry is most of
+  /// what separates a raised object from a rectangle with a border — and it
+  /// is per theme rather than universal, because a highlight on a white card
+  /// in Daylight has nothing to lift against, so there `raisedEdge` is
+  /// transparent and this collapses to a plain border.
+  ///
+  /// Selection and hover override it: those states are saying something the
+  /// lighting is not, and the border is where the app says it.
+  Color edge({bool top = false}) {
+    final ws = context.ws;
+    if (widget.selected) return ws.accent;
+    if (_hovered) return ws.textDim.withValues(alpha: 0.35);
+    return top
+        ? Color.alphaBlend(ws.elevation.raisedEdge, ws.border)
+        : ws.border;
+  }
+
   @override
   Widget build(BuildContext context) {
     final ws = context.ws;
@@ -123,28 +143,52 @@ class _SaveCardState extends State<SaveCard> {
             decoration: BoxDecoration(
               color: widget.selected ? ws.states.selected : ws.panel,
               borderRadius: BorderRadius.circular(ws.cardRadius),
-              border: Border.all(
-                color: widget.selected
-                    ? ws.accent
-                    : _hovered
-                    ? ws.textDim.withValues(alpha: 0.35)
-                    : ws.border,
-              ),
+              // Resting in the well, so it drops a shadow onto it. Two
+              // layers: a tight contact line that says the card is touching
+              // the surface, and a wider one carrying the height.
+              boxShadow: ws.elevation.raised,
+              // Uniform, and it has to be: BoxDecoration throws on a
+              // per-side border once borderRadius is set. The lit top edge is
+              // drawn inside the clip instead — see _TopHighlight below.
+              border: Border.all(color: edge()),
             ),
             clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: Stack(
               children: [
-                AspectRatio(
-                  aspectRatio: SaveCard.coverAspect,
-                  child: _Cover(path: widget.thumbnailPath),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AspectRatio(
+                      aspectRatio: SaveCard.coverAspect,
+                      child: _Cover(path: widget.thumbnailPath),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.all(ws.cardPadding),
+                        child: _Body(save: save, host: host),
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.all(ws.cardPadding),
-                    child: _Body(save: save, host: host),
+                // The lit top edge, inside the clip so it follows the rounded
+                // corners. This wants to be a border side, but BoxDecoration
+                // refuses a per-side border once borderRadius is set — and
+                // failed loudly enough that every card painted blank until it
+                // happened to be hovered, which made all four sides uniform.
+                //
+                // Suppressed while selected or hovered: those states own the
+                // edge, and a highlight fighting the accent colour reads as a
+                // rendering fault rather than as light.
+                if (!widget.selected && !_hovered)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 1,
+                    child: IgnorePointer(
+                      child: ColoredBox(color: ws.elevation.raisedEdge),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

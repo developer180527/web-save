@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_theme_engine/flutter_theme_engine.dart';
 
 import 'link_health_colors.dart';
+import 'elevation_colors.dart';
 import 'websave_theme.dart';
 
 /// `:root` — the light theme.
@@ -40,6 +41,16 @@ const daylight = WebSaveTheme(
     unreachable: Color(0xFF8A6D3B), // muted amber: a warning, not a verdict
     dead: Color(0xFFD4373E), // --red
     unchecked: Color(0xFF9A9AA3), // --gray
+  ),
+  // Light: the shadow does the work. A highlight on a white card has nothing
+  // to lift against, so raisedEdge is genuinely transparent rather than a
+  // token gesture that only muddies the top edge.
+  elevation: ElevationColors(
+    well: Color(0xFFF6F6F8),
+    wellShade: Color(0x0E000000),
+    raisedEdge: Color(0x00FFFFFF),
+    contact: Color(0x0F000000),
+    ambient: Color(0x0D000000),
   ),
   swatch: [Color(0xFFF6F6F8), Color(0xFF4762FF), Color(0xFF1C1C21)],
 );
@@ -67,6 +78,19 @@ const midnight = WebSaveTheme(
     unreachable: Color(0xFFBE9152),
     dead: Color(0xFFE06363),
     unchecked: Color(0xFF767676),
+  ),
+  // Dark: value does the work. Black over #161616 barely moves it, so the
+  // card's own step up from the well plus the light caught on its top edge
+  // carry the elevation, and the shadows shrink to a contact line whose only
+  // job is separating the card's bottom edge from the surface.
+  elevation: ElevationColors(
+    well: Color(0xFF161616),
+    wellShade: Color(0x40000000),
+    raisedEdge: Color(0x0EFFFFFF),
+    contact: Color(0x59000000),
+    ambient: Color(0x38000000),
+    ambientBlur: 10,
+    ambientOffset: 3,
   ),
   swatch: [Color(0xFF161616), Color(0xFF7C8CFF), Color(0xFFEDEDED)],
 );

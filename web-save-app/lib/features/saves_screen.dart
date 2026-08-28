@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../shell/layout_scope.dart';
+import '../shell/recessed_well.dart';
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
 import 'save_card.dart';
@@ -159,10 +160,19 @@ class _SavesScreenState extends State<SavesScreen> with WidgetsBindingObserver {
               ? const SizedBox.shrink()
               : _StatsStrip(stats: stats),
         ),
+        // Only the results are recessed. The header and the stats strip above
+        // are chrome, on the same plane as the sidebar and the title bar, and
+        // the lip is drawn where they meet the well.
         Expanded(
-          child: ListenableBuilder(
-            listenable: Listenable.merge([_controller, _controller.gridView]),
-            builder: (context, _) => _buildList(context),
+          child: RecessedWell(
+            // The sidebar is a wall to the left of the well on desktop; on a
+            // phone the well runs to the window edge with nothing above it to
+            // cast, and shading an edge with no wall reads as a vignette.
+            shadeLeading: context.layout.showsSidebar,
+            child: ListenableBuilder(
+              listenable: Listenable.merge([_controller, _controller.gridView]),
+              builder: (context, _) => _buildList(context),
+            ),
           ),
         ),
       ],

@@ -34,8 +34,13 @@ class SaveDetail extends StatelessWidget {
     final ws = context.ws;
     final host = Uri.tryParse(save.url)?.host ?? save.url;
 
+    // Chrome, not content: the detail pane sits on the same plane as the
+    // sidebar and the header rather than down in the well beside the grid.
+    // It is a place the app talks about a save, not a surface saves are kept
+    // on, and recessing it would put two different depths side by side across
+    // a one-pixel divider.
     return Container(
-      color: ws.background,
+      color: ws.panel,
       child: ListView(
         padding: EdgeInsets.all(ws.cardPadding * 1.5),
         children: [

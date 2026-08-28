@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_theme_engine/flutter_theme_engine.dart';
 
+import 'elevation_colors.dart';
 import 'link_health_colors.dart';
 
 @immutable
@@ -28,6 +29,7 @@ class WebSaveTheme extends ThemeModel {
     required this.danger,
     required this.health,
     required this.states,
+    required this.elevation,
     required this.swatch,
     this.cardRadius = 10,
     this.controlRadius = 8,
@@ -65,6 +67,10 @@ class WebSaveTheme extends ThemeModel {
 
   /// Hover, pressed and selected surfaces.
   final InteractionColors states;
+
+  /// How the app reads its own depth: which surface is recessed, what a
+  /// raised thing does to the light. See elevation_colors.dart.
+  final ElevationColors elevation;
 
   /// Three colours for the theme picker.
   ///
@@ -198,6 +204,7 @@ class WebSaveTheme extends ThemeModel {
       danger: Color.lerp(danger, other.danger, t),
       health: LinkHealthColors.lerp(health, other.health, t),
       states: InteractionColors.lerp(states, other.states, t),
+      elevation: ElevationColors.lerp(elevation, other.elevation, t),
       cardRadius: lerpDouble(cardRadius, other.cardRadius, t),
       controlRadius: lerpDouble(controlRadius, other.controlRadius, t),
       iconTileRadius: lerpDouble(iconTileRadius, other.iconTileRadius, t),
@@ -223,6 +230,7 @@ class WebSaveTheme extends ThemeModel {
     Color? danger,
     LinkHealthColors? health,
     InteractionColors? states,
+    ElevationColors? elevation,
     List<Color>? swatch,
     double? cardRadius,
     double? controlRadius,
@@ -246,6 +254,7 @@ class WebSaveTheme extends ThemeModel {
     danger: danger ?? this.danger,
     health: health ?? this.health,
     states: states ?? this.states,
+    elevation: elevation ?? this.elevation,
     swatch: swatch ?? this.swatch,
     cardRadius: cardRadius ?? this.cardRadius,
     controlRadius: controlRadius ?? this.controlRadius,
