@@ -15,13 +15,11 @@ class VaultSidebar extends StatelessWidget {
   const VaultSidebar({
     super.key,
     required this.controller,
-    required this.trailing,
     this.onOpenSettings,
     this.onShowSaves,
   });
 
   final SavesController controller;
-  final Widget trailing;
   final VoidCallback? onOpenSettings;
 
   /// Bring the saves list back into view.
@@ -158,8 +156,6 @@ class VaultSidebar extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              trailing,
-              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(

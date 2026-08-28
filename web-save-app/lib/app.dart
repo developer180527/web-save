@@ -101,7 +101,6 @@ class _HomeShellState extends State<HomeShell> {
         ]),
         builder: (context, _) => VaultSidebar(
           controller: _saves,
-          trailing: const ThemeQuickPicker(),
           // Indices into `destinations` below. Settings is no longer last —
           // Transfer sits after it — so these are pinned to position.
           onOpenSettings: () => onSelect(2),
@@ -135,82 +134,6 @@ class _HomeShellState extends State<HomeShell> {
           builder: (_) => TransferScreen(controller: _saves),
         ),
       ],
-      trailing: (context) => const ThemeQuickPicker(),
-    );
-  }
-}
-
-/// A compact swatch row in the sidebar footer.
-///
-/// Draws each pack from its stored `swatch` rather than from
-/// `pack.themeData`, so opening a catalogue of forty themes never triggers
-/// forty `ColorScheme.fromSeed` runs.
-class ThemeQuickPicker extends StatelessWidget {
-  const ThemeQuickPicker({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final engine = ThemeEngineScope.of<WebSaveTheme>(context);
-    // Touch variants are a density mechanism, not a user-facing choice.
-    final packs = engine.packs.where((p) => !p.id.endsWith('_touch')).toList();
-
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final pack in packs)
-          _Swatch(
-            pack: pack,
-            selected:
-                engine.currentId == pack.id ||
-                engine.currentId == '${pack.id}_touch',
-            onTap: () => engine.apply(pack.id),
-          ),
-      ],
-    );
-  }
-}
-
-class _Swatch extends StatelessWidget {
-  const _Swatch({
-    required this.pack,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final ThemePack<WebSaveTheme> pack;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ws = context.ws;
-    final colors = pack.model.swatch;
-    return Tooltip(
-      message: pack.meta.name,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 30,
-          height: 22,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(ws.iconTileRadius),
-            border: Border.all(
-              color: selected ? ws.accent : ws.border,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(ws.iconTileRadius - 1),
-            child: Row(
-              children: [
-                for (final color in colors)
-                  Expanded(child: Container(color: color)),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

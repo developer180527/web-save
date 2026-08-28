@@ -56,7 +56,11 @@ class LayoutInfo {
 
   /// Room for list and detail at the same time. Below this, opening a save
   /// pushes a route instead.
-  bool get showsDetailPane => size == ShellSize.expanded;
+  ///
+  /// Keyed to the actual width rather than to [size], which is what lets a
+  /// desktop window keep its sidebar at any width without also trying to
+  /// split a 500-point window down the middle.
+  bool get showsDetailPane => width >= kDesktopBreakpoint;
 
   /// Whether to render hover-revealed affordances at all. On touch they are
   /// invisible, so those controls have to be permanent or move to a
@@ -78,12 +82,21 @@ class LayoutInfo {
 
   /// What the width affords, floored by what the platform should offer.
   ///
-  /// [ShellSize.compact] is a touch idiom, so a desktop window never reaches
-  /// it however narrow it is dragged.
+  /// Touch platforms follow the width. A desktop window does not: it stays
+  /// expanded however narrow it is dragged.
+  ///
+  /// Resizing a window is not the same act as picking up a smaller device.
+  /// Someone dragging a desktop window narrower has not changed what they
+  /// want the app to be, and having the sidebar collapse into a rail
+  /// underneath their cursor — then reappear on the way back out — is the
+  /// layout arguing with them. The Tauri app keeps it, and so does every
+  /// desktop app with a source list.
+  ///
+  /// The detail pane still follows the real width, so a narrow window gives
+  /// the list all the room that is left rather than halving it.
   static ShellSize sizeFor(double width, {required bool touch}) {
-    final afforded = sizeForWidth(width);
-    if (touch || afforded != ShellSize.compact) return afforded;
-    return ShellSize.medium;
+    if (!touch) return ShellSize.expanded;
+    return sizeForWidth(width);
   }
 }
 

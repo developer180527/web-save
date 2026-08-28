@@ -20,12 +20,15 @@ void main() {
     // A bottom tab bar is a thumb idiom. A desktop window dragged narrow
     // wants the icon rail instead -- the mouse reaches a rail perfectly well,
     // and a tab bar on a desktop just looks like a phone app pasted in.
-    test('a desktop window never reaches the compact shell', () {
-      for (final width in [560, 400, 320, 120]) {
+    test('a desktop window stays expanded however narrow it is dragged', () {
+      // Resizing a window is not the same act as picking up a smaller device.
+      // The sidebar collapsing under the cursor mid-drag, then reappearing on
+      // the way back out, is the layout arguing with the user.
+      for (final width in [1200, 900, 560, 400, 320, 120]) {
         expect(
           LayoutInfo.sizeFor(width.toDouble(), touch: false),
-          ShellSize.medium,
-          reason: '$width px on desktop should floor at the rail',
+          ShellSize.expanded,
+          reason: '$width px on desktop should keep the sidebar',
         );
       }
     });
@@ -55,18 +58,37 @@ void main() {
   });
 
   group('derived flags', () {
-    LayoutInfo info(ShellSize size, {bool touch = false}) => LayoutInfo(
+    // Width matters now: showsDetailPane is keyed to it rather than to size,
+    // so a desktop window can keep its sidebar at any width without also
+    // splitting itself in two.
+    LayoutInfo info(
+      ShellSize size, {
+      bool touch = false,
+      double width = 1200,
+    }) => LayoutInfo(
       size: size,
-      width: 0,
+      width: width,
       isTouchPlatform: touch,
       hasPrecisedPointer: !touch,
     );
 
-    test('only the expanded shell shows a sidebar and a detail pane', () {
+    test('only the expanded shell shows a sidebar', () {
       expect(info(ShellSize.expanded).showsSidebar, isTrue);
-      expect(info(ShellSize.expanded).showsDetailPane, isTrue);
       expect(info(ShellSize.medium).showsSidebar, isFalse);
-      expect(info(ShellSize.medium).showsDetailPane, isFalse);
+    });
+
+    test('the detail pane follows the real width, not the shell size', () {
+      // The case that matters: a desktop window dragged narrow stays expanded
+      // and keeps its sidebar, but must not try to show list and detail side
+      // by side in the width that is left.
+      expect(info(ShellSize.expanded, width: 1200).showsDetailPane, isTrue);
+      expect(
+        info(ShellSize.expanded, width: 700).showsDetailPane,
+        isFalse,
+        reason:
+            'a narrow desktop window gives the list what room remains '
+            'rather than halving it',
+      );
     });
 
     test('the custom title bar is desktop-only', () {

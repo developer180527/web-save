@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../theme/app_icons.dart';
 import '../platform/desktop_window.dart';
 import '../theme/websave_theme.dart';
 import 'layout_scope.dart';
@@ -83,9 +84,12 @@ class _WindowButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        _WindowButton(icon: Icons.remove, onTap: windowManager.minimize),
         _WindowButton(
-          icon: Icons.crop_square,
+          icon: AppIcons.windowMinimize,
+          onTap: windowManager.minimize,
+        ),
+        _WindowButton(
+          icon: AppIcons.windowMaximize,
           onTap: () async {
             if (await windowManager.isMaximized()) {
               await windowManager.unmaximize();
@@ -95,7 +99,7 @@ class _WindowButtons extends StatelessWidget {
           },
         ),
         _WindowButton(
-          icon: Icons.close,
+          icon: AppIcons.windowClose,
           danger: true,
           // Closing hides rather than quits, matching the Tauri app: capture
           // and link monitoring keep running, and quit lives in the tray.

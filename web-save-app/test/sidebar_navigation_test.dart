@@ -45,11 +45,7 @@ void main() {
 
     await _pump(
       tester,
-      VaultSidebar(
-        controller: controller,
-        trailing: const SizedBox.shrink(),
-        onShowSaves: () => shown++,
-      ),
+      VaultSidebar(controller: controller, onShowSaves: () => shown++),
     );
 
     await tester.tap(find.text('Inbox'));
@@ -73,11 +69,7 @@ void main() {
 
     await _pump(
       tester,
-      VaultSidebar(
-        controller: controller,
-        trailing: const SizedBox.shrink(),
-        onShowSaves: () => shown++,
-      ),
+      VaultSidebar(controller: controller, onShowSaves: () => shown++),
     );
 
     for (final label in ['Favorites', 'All saves', 'Active']) {
@@ -93,10 +85,7 @@ void main() {
     // the list, where there is nothing to navigate to.
     final controller = _OfflineController();
 
-    await _pump(
-      tester,
-      VaultSidebar(controller: controller, trailing: const SizedBox.shrink()),
-    );
+    await _pump(tester, VaultSidebar(controller: controller));
 
     await tester.tap(find.text('Inbox'));
     await tester.pump();

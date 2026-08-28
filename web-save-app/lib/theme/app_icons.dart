@@ -30,8 +30,13 @@ abstract final class AppIcons {
   static IconData get inbox =>
       _isApple ? CupertinoIcons.tray : Icons.inbox_outlined;
   static IconData get tag => _isApple ? CupertinoIcons.tag : Icons.tag;
+
+  /// The gear, not sliders. CupertinoIcons.slider_horizontal_3 is what an
+  /// iOS app uses for *filter and sort* controls; settings is the gear
+  /// everywhere on the platform, and using the sliders here read as a
+  /// filtering affordance sitting in the sidebar footer.
   static IconData get settings =>
-      _isApple ? CupertinoIcons.slider_horizontal_3 : Icons.tune;
+      _isApple ? CupertinoIcons.gear_alt : Icons.tune;
   static IconData get transfer =>
       _isApple ? CupertinoIcons.arrow_up_arrow_down : Icons.swap_vert;
   static IconData get globe => _isApple ? CupertinoIcons.globe : Icons.language;
