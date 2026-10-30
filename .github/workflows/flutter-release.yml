@@ -38,6 +38,14 @@ on:
       - ".github/workflows/flutter-release.yml"
       - ".github/actions/setup-flutter/**"
       - "web-save-app/macos/packaging/**"
+      # The native projects: Xcode, Gradle, CMake and the cargokit glue are
+      # where a build breaks without any Dart test noticing.
+      - "web-save-app/macos/**"
+      - "web-save-app/ios/**"
+      - "web-save-app/android/**"
+      - "web-save-app/windows/**"
+      - "web-save-app/linux/**"
+      - "web-save-app/rust_builder/**"
   workflow_dispatch:
 
 permissions:

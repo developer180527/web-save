@@ -47,3 +47,6 @@ ios-app/Generated
 
 # Miscellaneous
 commit.txt
+# macOS writes this (named "Icon" + carriage return) when a folder has a custom
+# Finder icon. The name is illegal on Windows, where it breaks `git checkout`.
+Icon\r

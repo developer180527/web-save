@@ -9,6 +9,14 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # Vendored from flutter_rust_bridge. Cargokit's build tool is its own Dart
+    # package whose dependencies are only fetched the first time a native
+    # build runs it, so on a fresh checkout every import in it is unresolved.
+    # It is not our code and not part of the app.
+    - rust_builder/cargokit/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
