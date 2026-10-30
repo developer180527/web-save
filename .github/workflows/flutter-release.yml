@@ -104,16 +104,10 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           rust-targets: aarch64-apple-darwin
 
+      # Apple Silicon only. That is the project's own setting (ARCHS in
+      # Runner.xcodeproj and the Podfile), so this is a plain build.
       - name: Build
         working-directory: web-save-app
-        env:
-          # Flutter passes FLUTTER_XCODE_* through to xcodebuild as build
-          # settings, and a command-line setting applies to every target, the
-          # CocoaPods ones included. Without this, the release build is
-          # universal: Flutter, the plugins and the Rust bridge all compile
-          # an x86_64 slice nobody can use now that Intel Macs are unsupported.
-          FLUTTER_XCODE_ARCHS: arm64
-          FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
         run: flutter build macos --release
 
       - name: Check it really is arm64-only

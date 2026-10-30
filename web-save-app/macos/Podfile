@@ -44,6 +44,11 @@ post_install do |installer|
     # rather than chasing each one.
     target.build_configurations.each do |config|
       config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '12.0'
+      # Apple Silicon only, matching ARCHS in Runner.xcodeproj. Both have to
+      # agree: Flutter checks the framework it copies against the app's
+      # architectures, and a universal pod next to an arm64 app (or the
+      # reverse) fails the build with "does not contain architectures".
+      config.build_settings['ARCHS'] = 'arm64'
     end
   end
 end
