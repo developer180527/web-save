@@ -29,6 +29,15 @@ name: Flutter Release
 on:
   push:
     tags: ["app-v*"]
+    # A branch push that changes the packaging itself runs every build but
+    # publishes nothing (see the `release` job's condition), so a broken DMG
+    # script or a renamed output folder shows up on the branch, not on
+    # release day. GitHub ignores these path filters for tag pushes.
+    branches: ["**"]
+    paths:
+      - ".github/workflows/flutter-release.yml"
+      - ".github/actions/setup-flutter/**"
+      - "web-save-app/macos/packaging/**"
   workflow_dispatch:
 
 permissions:
@@ -300,6 +309,8 @@ jobs:
   release:
     name: Draft release
     needs: [version, macos, windows, linux, android, ios]
+    # Only a tag or a manual run publishes. A branch push stops at the builds.
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
