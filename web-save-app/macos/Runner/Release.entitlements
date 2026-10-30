@@ -1,8 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+<!--
+  Not sandboxed, like DebugProfile.entitlements. The sandbox is only required
+  for the Mac App Store, which this app does not ship through, and the app
+  cannot work inside it: it listens on 127.0.0.1:38917 for the browser
+  extension, checks links over the network, and shares its vault in
+  Application Support with the menubar app. Flutter's template sandboxes
+  Release alone, so the DMG behaved differently from every build that was
+  ever run or tested, and could do none of those three things.
+-->
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 </dict>
 </plist>
