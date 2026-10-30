@@ -9,13 +9,17 @@
 globalThis.chrome = globalThis.browser ?? globalThis.chrome;
 
 const ENDPOINT = "http://127.0.0.1:38917";
+const ORIGIN = `${ENDPOINT}/*`;
 const APP_DOWNLOAD_URL =
   "https://github.com/developer180527/web-save/releases";
 const QUEUE_KEY = "pendingSaves";
+const ERROR_KEY = "lastSyncError";
 const RESULT_LIMIT = 10;
 
 const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("save");
+const allowBtn = document.getElementById("allow");
+const syncBtn = document.getElementById("sync");
 const queuedEl = document.getElementById("queued");
 const downloadEl = document.getElementById("download");
 const searchEl = document.getElementById("search");
@@ -152,7 +156,14 @@ async function loadSaves() {
   render();
 }
 
+/** Whether the extension may talk to the app. See `requestAccess` in background.js. */
+function hasAccess() {
+  return chrome.permissions.contains({ origins: [ORIGIN] });
+}
+
 async function refreshStatus() {
+  const access = await hasAccess();
+  allowBtn.hidden = access;
   let running = false;
   let version = null;
   try {
@@ -167,7 +178,13 @@ async function refreshStatus() {
     // app not running
   }
 
-  if (running) {
+  if (!access) {
+    // Without the permission the ping is blocked too, so "not running"
+    // would be a guess. Say what is actually wrong.
+    statusEl.className = "status disconnected";
+    statusEl.textContent = "Needs permission";
+    downloadEl.hidden = true;
+  } else if (running) {
     statusEl.className = "status connected";
     statusEl.textContent = `Connected${version ? ` · v${version}` : ""}`;
     downloadEl.hidden = true;
@@ -177,11 +194,20 @@ async function refreshStatus() {
     downloadEl.hidden = false;
   }
 
-  const { [QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(QUEUE_KEY);
+  const { [QUEUE_KEY]: queue = [], [ERROR_KEY]: error } =
+    await chrome.storage.local.get([QUEUE_KEY, ERROR_KEY]);
+  const why = !access
+    ? " · needs permission"
+    : !running
+      ? " · app not running"
+      : error === "rejected"
+        ? " · the app refused them"
+        : "";
   queuedEl.textContent = queue.length
-    ? `${queue.length} save${queue.length > 1 ? "s" : ""} waiting to sync`
+    ? `${queue.length} save${queue.length > 1 ? "s" : ""} waiting to sync${why}`
     : "";
-  return running;
+  syncBtn.hidden = !(queue.length && access && running);
+  return access && running;
 }
 
 // -------------------------------------------------------------- events --
@@ -195,10 +221,34 @@ searchEl.addEventListener("keydown", (e) => {
   if (first) first.click();
 });
 
+allowBtn.addEventListener("click", async () => {
+  // First call in the handler: Firefox only shows the prompt from a click,
+  // and only before the handler has awaited anything.
+  const granted = await chrome.permissions
+    .request({ origins: [ORIGIN] })
+    .catch(() => false);
+  if (granted) await chrome.runtime.sendMessage({ type: "flush-queue" });
+  if (await refreshStatus()) loadSaves();
+});
+
+syncBtn.addEventListener("click", async () => {
+  syncBtn.disabled = true;
+  syncBtn.textContent = "Syncing…";
+  await chrome.runtime.sendMessage({ type: "flush-queue" }).catch(() => {});
+  syncBtn.disabled = false;
+  syncBtn.textContent = "Sync now";
+  if (await refreshStatus()) loadSaves();
+});
+
 saveBtn.addEventListener("click", async () => {
+  // Same reason as above: ask while the click still counts.
+  const access = chrome.permissions
+    .request({ origins: [ORIGIN] })
+    .catch(() => false);
   saveBtn.disabled = true;
   saveBtn.textContent = "Saving…";
   let status = "invalid";
+  await access;
   try {
     status = (await chrome.runtime.sendMessage({ type: "capture-active-tab" }))
       ?.status;
@@ -209,7 +259,7 @@ saveBtn.addEventListener("click", async () => {
     status === "saved"
       ? "Saved ✓"
       : status === "queued"
-        ? "Queued — app offline"
+        ? "Queued — will sync"
         : "Can't save this page";
   setTimeout(async () => {
     saveBtn.disabled = false;
@@ -225,7 +275,16 @@ downloadEl.addEventListener("click", (e) => {
 });
 
 (async () => {
-  if (await refreshStatus()) loadSaves();
-  else render();
+  if (await refreshStatus()) {
+    loadSaves();
+    // The app is reachable and the popup is open: send any backlog now.
+    const { [QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(QUEUE_KEY);
+    if (queue.length) {
+      await chrome.runtime.sendMessage({ type: "flush-queue" }).catch(() => {});
+      await refreshStatus();
+    }
+  } else {
+    render();
+  }
   searchEl.focus();
 })();

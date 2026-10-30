@@ -10,8 +10,36 @@
 globalThis.chrome = globalThis.browser ?? globalThis.chrome;
 
 const ENDPOINT = "http://127.0.0.1:38917";
+const ORIGIN = `${ENDPOINT}/*`;
 const QUEUE_KEY = "pendingSaves";
+// Why the last attempt to reach the app failed, for the popup to explain:
+// "permission" | "offline" | "rejected". Cleared on the next success.
+const ERROR_KEY = "lastSyncError";
 const QUEUE_LIMIT = 200;
+const FLUSH_ALARM = "flush-queue";
+
+// The retry timer has to exist every time this script starts, not only on
+// install: Firefox drops alarms when the browser restarts, which left the
+// queue with nothing to flush it until the next save.
+chrome.alarms.get(FLUSH_ALARM).then((alarm) => {
+  if (!alarm) chrome.alarms.create(FLUSH_ALARM, { periodInMinutes: 1 });
+});
+
+/**
+ * Ask for the one host permission the extension needs, from a click.
+ *
+ * Talking to the app means a request to 127.0.0.1 carrying a custom header.
+ * From an origin without host permission that is a CORS request, and the app
+ * deliberately refuses those (it is what keeps web pages out of the vault).
+ * Chrome grants `host_permissions` at install; Firefox may not, and then
+ * every save failed and queued forever. A browser only shows the prompt in
+ * response to a user action, and Firefox only before the handler has awaited
+ * anything, so callers make this their first call. Once granted it resolves
+ * at once, with no prompt.
+ */
+function requestAccess() {
+  return chrome.permissions.request({ origins: [ORIGIN] }).catch(() => false);
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -29,10 +57,10 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Save page to WebSave (selection as description)",
     contexts: ["selection"],
   });
-  chrome.alarms.create("flush-queue", { periodInMinutes: 1 });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  await requestAccess();
   if (info.menuItemId === "save-link") {
     await capture({ url: info.linkUrl ?? "" });
   } else if (info.menuItemId === "save-selection") {
@@ -44,11 +72,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // Toolbar button = save current page.
 chrome.action.onClicked.addListener(async (tab) => {
+  await requestAccess();
   await capture(await pagePayload(tab));
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "flush-queue") flushQueue();
+  if (alarm.name === FLUSH_ALARM) flushQueue();
 });
 chrome.runtime.onStartup.addListener(() => {
   flushQueue();
@@ -126,20 +155,57 @@ async function capture(payload) {
   }
   try {
     await post(payload);
+    await chrome.storage.local.remove(ERROR_KEY);
     await flashBadge("✓", "#2e9e5b");
+    // The app is reachable now, so anything queued earlier can go too,
+    // rather than waiting up to a minute for the alarm.
+    flushQueue();
     return "saved";
-  } catch {
+  } catch (error) {
     await enqueue(payload);
+    const reason = await diagnose(error);
+    await chrome.storage.local.set({ [ERROR_KEY]: reason });
     await flashBadge("○", "#c98a1b");
     chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/128.png",
-      title: "WebSave is not running",
-      message: "Saved to the queue — it will sync once the app is open.",
+      ...NOTICES[reason],
     });
     return "queued";
   }
 }
+
+const NOTICES = {
+  permission: {
+    title: "WebSave needs permission",
+    message:
+      "Saved to the queue. Click the WebSave toolbar button and choose " +
+      "Allow access so it can reach the app.",
+  },
+  offline: {
+    title: "WebSave is not running",
+    message: "Saved to the queue. It will sync once the app is open.",
+  },
+  rejected: {
+    title: "WebSave refused the save",
+    message:
+      "Saved to the queue. The app answered with an error; it will retry.",
+  },
+};
+
+/**
+ * Why a send failed. "Not running" was the only answer before, which hid a
+ * missing permission behind a message that sent people to check an app that
+ * was already open.
+ */
+async function diagnose(error) {
+  if (!(await chrome.permissions.contains({ origins: [ORIGIN] }))) {
+    return "permission";
+  }
+  return error instanceof HttpError ? "rejected" : "offline";
+}
+
+class HttpError extends Error {}
 
 async function post(payload) {
   const resp = await fetch(`${ENDPOINT}/save`, {
@@ -153,13 +219,17 @@ async function post(payload) {
     body: JSON.stringify(payload),
   });
   if (!resp.ok) {
-    throw new Error(`HTTP ${resp.status}`);
+    throw new HttpError(`HTTP ${resp.status}`);
   }
 }
 
 // The popup delegates the actual capture here (the background has the
 // scraping + screenshot logic and the host permissions).
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "flush-queue") {
+    flushQueue().then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (msg?.type === "capture-active-tab") {
     chrome.tabs
       .query({ active: true, currentWindow: true })
@@ -180,18 +250,43 @@ async function enqueue(payload) {
   await chrome.storage.local.set({ [QUEUE_KEY]: next.slice(-QUEUE_LIMIT) });
 }
 
-async function flushQueue() {
+// Two flushes at once (a save's follow-up flush landing on the alarm's)
+// would post the same queued pages twice.
+let flushing = null;
+
+function flushQueue() {
+  flushing ??= flushOnce().finally(() => {
+    flushing = null;
+  });
+  return flushing;
+}
+
+async function flushOnce() {
   const { [QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(QUEUE_KEY);
   if (queue.length === 0) return;
   const remaining = [];
+  let lastError = null;
   for (const payload of queue) {
     try {
       await post(payload);
-    } catch {
+    } catch (error) {
+      lastError = error;
       remaining.push(payload);
     }
   }
-  await chrome.storage.local.set({ [QUEUE_KEY]: remaining });
+  // Pages saved while this ran were appended to the stored queue; keep them.
+  const { [QUEUE_KEY]: now = [] } = await chrome.storage.local.get(QUEUE_KEY);
+  const sent = new Set(
+    queue.filter((p) => !remaining.includes(p)).map((p) => p.url),
+  );
+  await chrome.storage.local.set({
+    [QUEUE_KEY]: now.filter((p) => !sent.has(p.url)),
+  });
+  if (lastError) {
+    await chrome.storage.local.set({ [ERROR_KEY]: await diagnose(lastError) });
+  } else {
+    await chrome.storage.local.remove(ERROR_KEY);
+  }
   if (remaining.length < queue.length) {
     await flashBadge("✓", "#2e9e5b");
   }
