@@ -1,0 +1,357 @@
+name: Flutter Release
+
+# Builds the Flutter app (web-save-app/) for every platform and attaches the
+# downloads to a DRAFT GitHub Release, which you review and publish by hand.
+#
+#   macOS    Apple Silicon only, as a drag-to-install DMG
+#   Windows  x64 and arm64, as zips
+#   Linux    x64 and arm64, as tarballs
+#   Android  one universal APK
+#   iOS      an unsigned IPA, for sideloading
+#
+# Nothing ships unless the full test matrix in flutter-ci.yml passes first.
+#
+# Trigger: push a tag `app-vX.Y.Z` that matches `version:` in
+# web-save-app/pubspec.yaml, or run it from the Actions tab.
+#
+# The `app-` prefix keeps this apart from release.yml, which builds the
+# legacy Tauri app on plain `v*` tags. Both can exist side by side.
+#
+# Signing: none of this needs a paid account. To give Android APKs a stable
+# key, so that each release installs as an update over the last, add these
+# repository secrets:
+#   ANDROID_KEYSTORE_BASE64   base64 of the .jks file
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+# Without them the APK is signed with that run's throwaway debug key.
+
+on:
+  push:
+    tags: ["app-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flutter-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.6"
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: Read pubspec version
+        run: |
+          # `1.2.0+7` -> `1.2.0`. The build number is Android's/Apple's
+          # business; the release is named for the marketing version.
+          version=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' web-save-app/pubspec.yaml)
+          [ -n "$version" ] || { echo "::error::no version in pubspec.yaml"; exit 1; }
+          tag="app-v$version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pubspec version $version (expected $tag)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Tests
+    uses: ./.github/workflows/flutter-ci.yml
+
+  macos:
+    name: macOS arm64 (DMG)
+    needs: [version, test]
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          rust-targets: aarch64-apple-darwin
+
+      - name: Build
+        working-directory: web-save-app
+        env:
+          # Flutter passes FLUTTER_XCODE_* through to xcodebuild as build
+          # settings, and a command-line setting applies to every target, the
+          # CocoaPods ones included. Without this, the release build is
+          # universal: Flutter, the plugins and the Rust bridge all compile
+          # an x86_64 slice nobody can use now that Intel Macs are unsupported.
+          FLUTTER_XCODE_ARCHS: arm64
+          FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
+        run: flutter build macos --release
+
+      - name: Check it really is arm64-only
+        working-directory: web-save-app/build/macos/Build/Products/Release
+        run: |
+          set -e
+          archs=$(lipo -archs WebSave.app/Contents/MacOS/WebSave)
+          echo "WebSave: $archs"
+          [ "$archs" = arm64 ] || { echo "::error::expected arm64 only, got $archs"; exit 1; }
+
+      - name: Package DMG
+        working-directory: web-save-app
+        run: |
+          brew install create-dmg
+          out="$RUNNER_TEMP/dist/WebSave-${{ needs.version.outputs.version }}-macos-arm64.dmg"
+          mkdir -p "$(dirname "$out")"
+          macos/packaging/make_dmg.sh build/macos/Build/Products/Release/WebSave.app "$out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    needs: [version, test]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: windows-2025 }
+          - { arch: arm64, runner: windows-11-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      # Built natively on each architecture: Flutter's Windows tooling
+      # targets the host CPU, so the arm64 build needs an arm64 runner.
+      - name: Build
+        shell: bash
+        working-directory: web-save-app
+        run: flutter build windows --release
+
+      - name: Package zip
+        shell: pwsh
+        working-directory: web-save-app
+        run: |
+          $src = "build/windows/${{ matrix.arch }}/runner/Release"
+          if (-not (Test-Path "$src/websave_app.exe")) { throw "no build output at $src" }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/dist" | Out-Null
+          # Zipped inside a WebSave folder so extracting it never sprays DLLs
+          # across someone's Downloads directory.
+          $stage = "$env:RUNNER_TEMP/stage/WebSave"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item -Recurse "$src/*" $stage
+          Compress-Archive -Path $stage `
+            -DestinationPath "$env:RUNNER_TEMP/dist/WebSave-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    needs: [version, test]
+    # 22.04 rather than 24.04 on purpose. A Linux binary runs on the glibc it
+    # was built against and anything newer, so building on the older base
+    # is what lets the tarball run on more distributions.
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-22.04 }
+          - { arch: arm64, runner: ubuntu-22.04-arm }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Build
+        working-directory: web-save-app
+        run: flutter build linux --release
+
+      - name: Package tarball
+        working-directory: web-save-app
+        run: |
+          src="build/linux/${{ matrix.arch }}/release/bundle"
+          [ -x "$src/websave_app" ] || { echo "::error::no build output at $src"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/dist" "$RUNNER_TEMP/stage"
+          cp -R "$src" "$RUNNER_TEMP/stage/WebSave"
+          tar -C "$RUNNER_TEMP/stage" -czf \
+            "$RUNNER_TEMP/dist/WebSave-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz" WebSave
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  android:
+    name: Android (APK)
+    needs: [version, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          rust-targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Release signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: web-save-app/android
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No ANDROID_KEYSTORE_* secrets; the APK is signed with a throwaway debug key and will not install as an update over another build."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > release.jks
+          {
+            echo "storeFile=release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > key.properties
+
+      # One universal APK (arm64, armv7, x86_64) rather than one per ABI: it
+      # is what someone downloading from a release page can install without
+      # first finding out which CPU their phone has.
+      - name: Build
+        working-directory: web-save-app
+        run: flutter build apk --release
+
+      - name: Collect
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp web-save-app/build/app/outputs/flutter-apk/app-release.apk \
+            "$RUNNER_TEMP/dist/WebSave-${{ needs.version.outputs.version }}-android.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  ios:
+    name: iOS (unsigned IPA)
+    needs: [version, test]
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          rust-targets: aarch64-apple-ios
+
+      # Unsigned, because signing for distribution needs a paid Apple
+      # developer account. Sideloading tools (AltStore, SideStore,
+      # Sideloadly) re-sign the IPA with the user's own free Apple ID.
+      - name: Build
+        working-directory: web-save-app
+        run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        working-directory: web-save-app/build/ios/iphoneos
+        run: |
+          mkdir -p "$RUNNER_TEMP/dist" Payload
+          cp -R Runner.app Payload/
+          zip -qry "$RUNNER_TEMP/dist/WebSave-${{ needs.version.outputs.version }}-ios-unsigned.ipa" Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: ${{ runner.temp }}/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Draft release
+    needs: [version, macos, windows, linux, android, ios]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * | tee SHA256SUMS.txt
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          ## Downloads
+
+          | Platform | File |
+          |---|---|
+          | macOS (Apple Silicon) | \`WebSave-$VERSION-macos-arm64.dmg\` |
+          | Windows x64 | \`WebSave-$VERSION-windows-x64.zip\` |
+          | Windows ARM64 | \`WebSave-$VERSION-windows-arm64.zip\` |
+          | Linux x64 | \`WebSave-$VERSION-linux-x64.tar.gz\` |
+          | Linux ARM64 | \`WebSave-$VERSION-linux-arm64.tar.gz\` |
+          | Android | \`WebSave-$VERSION-android.apk\` |
+          | iOS / iPadOS (sideload) | \`WebSave-$VERSION-ios-unsigned.ipa\` |
+
+          ## First launch
+
+          These builds are not signed with paid developer certificates, so each OS asks once before running them.
+
+          - **macOS:** open the DMG and drag WebSave into Applications. The first time you open it, macOS blocks it. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
+          - **Windows:** unzip, run \`websave_app.exe\`. If SmartScreen appears, choose **More info → Run anyway**.
+          - **Linux:** \`tar xzf\` the archive and run \`WebSave/websave_app\`. Needs GTK 3, which every mainstream desktop already has.
+          - **Android:** allow installs from your browser or file manager when prompted.
+          - **iOS / iPadOS:** install with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID.
+
+          Verify downloads against \`SHA256SUMS.txt\`.
+          EOF
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Re-running for the same version replaces the files on the
+            # existing draft instead of failing on a duplicate tag.
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --draft \
+              --title "WebSave $VERSION" \
+              --notes-file notes.md
+          fi

@@ -1,0 +1,58 @@
+name: Set up Flutter + Rust
+description: >
+  Installs a pinned Flutter SDK from git and a stable Rust toolchain, on any
+  runner including the ARM64 Linux and Windows ones.
+
+# Why not subosito/flutter-action: it installs from Google's prebuilt SDK
+# archives, and there are none for Linux or Windows on ARM64. A git checkout
+# works everywhere, because `flutter` bootstraps the Dart SDK for whatever
+# host it finds itself on. Using it on every runner, not just the ARM ones,
+# means every platform builds with the identical SDK.
+
+inputs:
+  flutter-version:
+    description: Flutter release tag to check out.
+    required: true
+  rust-targets:
+    description: Extra rustup targets, comma separated. Cargokit adds any it needs anyway; listing them here just keeps that out of the build log.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Flutter SDK
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/flutter
+        key: flutter-${{ inputs.flutter-version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install Flutter ${{ inputs.flutter-version }}
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/flutter"
+        if [ ! -x "$dir/bin/flutter" ]; then
+          git clone --depth 1 --branch "${{ inputs.flutter-version }}" \
+            https://github.com/flutter/flutter.git "$dir"
+        fi
+        echo "$dir/bin" >> "$GITHUB_PATH"
+
+    - name: Report Flutter
+      shell: bash
+      run: |
+        flutter config --no-analytics >/dev/null
+        flutter --version
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.rust-targets }}
+
+    - name: Cache Rust build
+      uses: swatinem/rust-cache@v2
+      with:
+        # The bridge crate is built by cargokit into the Flutter build tree,
+        # so only the registry is worth caching between runs; the shared key
+        # keeps each OS/arch pair from evicting the others.
+        shared-key: ${{ runner.os }}-${{ runner.arch }}
+        cache-targets: false

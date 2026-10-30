@@ -1,0 +1,92 @@
+name: Flutter CI
+
+# Tests the Flutter app (web-save-app/) and the Rust it runs on, on every OS
+# and CPU the release ships for. Desktop tests run on every desktop runner,
+# ARM included, because the release builds the app natively on each of
+# them. A test that only breaks on Windows ARM should fail here, not in a
+# user's hands.
+#
+# The legacy Tauri app (src/, src-tauri/) keeps its own workflow, release.yml,
+# and nothing here builds it. The Rust tests below cover only the two crates
+# the Flutter app links: websave-core and the bridge. Testing the whole
+# workspace would drag in src-tauri, which needs WebKitGTK on Linux.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "web-save-app/**"
+      - "core/**"
+      - "bridge/**"
+      - "Cargo.lock"
+      - ".github/workflows/flutter-*.yml"
+      - ".github/actions/setup-flutter/**"
+  pull_request:
+    paths:
+      - "web-save-app/**"
+      - "core/**"
+      - "bridge/**"
+      - "Cargo.lock"
+      - ".github/workflows/flutter-*.yml"
+      - ".github/actions/setup-flutter/**"
+  workflow_dispatch:
+  # flutter-release.yml runs this first and ships nothing unless it passes.
+  workflow_call:
+
+concurrency:
+  # In a called run, github.workflow is the caller's name, so a release run
+  # never shares a group with (or gets cancelled by) a branch push.
+  group: ${{ github.workflow }}-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.6"
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+      - name: flutter analyze
+        working-directory: web-save-app
+        run: |
+          flutter pub get
+          flutter analyze
+
+  test:
+    name: Test · ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    # Bounds a job that is running. A job waiting for a runner label that does
+    # not exist is not covered by this and sits queued for 24 hours, which is
+    # how the old macOS Intel release job died.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: macOS arm64, runner: macos-26 }
+          - { label: Linux x64, runner: ubuntu-24.04 }
+          - { label: Linux arm64, runner: ubuntu-24.04-arm }
+          - { label: Windows x64, runner: windows-2025 }
+          - { label: Windows arm64, runner: windows-11-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Rust tests (core + bridge)
+        shell: bash
+        run: cargo test -p websave-core -p websave_bridge
+
+      - name: Flutter tests
+        shell: bash
+        working-directory: web-save-app
+        run: |
+          flutter pub get
+          flutter test
