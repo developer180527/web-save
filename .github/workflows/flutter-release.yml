@@ -46,6 +46,12 @@ on:
       - "web-save-app/windows/**"
       - "web-save-app/linux/**"
       - "web-save-app/rust_builder/**"
+      # Cargokit compiles these into every build, per target. A Rust change
+      # can break one platform's compile (Windows arm64, say) with no test
+      # failing anywhere.
+      - "core/**"
+      - "bridge/**"
+      - "Cargo.lock"
   workflow_dispatch:
 
 permissions:
