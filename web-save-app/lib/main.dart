@@ -41,17 +41,40 @@ Future<String> vaultPath() async {
   return '${support.path}/vault';
 }
 
-/// How to reach the Rust symbols on this platform.
+/// How to reach the Rust library backing this app, on this platform.
 ///
-/// The Rust library backing this app.
+/// Cargokit packages the crate differently per platform, so there is no one
+/// answer:
 ///
-/// Cargokit compiles the crate as a static library and links it into the
-/// executable with -force_load on every platform, so by the time Dart runs
-/// the symbols are already in the process — there is no file to find and
-/// nothing to bundle separately. This replaced a loader that searched the
-/// source tree for a dylib, which only ever worked when the app was launched
-/// from inside the repo and silently picked up a stale debug build otherwise.
-ExternalLibrary rustLibrary() => ExternalLibrary.process(iKnowHowToUseIt: true);
+/// - **macOS and iOS:** a framework the app links against, so dyld has loaded
+///   it before Dart runs and the symbols are already in the process.
+/// - **Windows, Linux and Android:** a shared library shipped beside the app
+///   (`websave_bridge.dll`, `lib/libwebsave_bridge.so`, the APK's jniLibs)
+///   that nothing loads unless asked. Looking it up in the process fails
+///   with "Failed to lookup symbol" before the first frame. Every build for
+///   these platforms did exactly that until the CI launch test ran them.
+///
+/// Desktop paths are resolved from the executable, not the working
+/// directory, because a launcher's cwd is anywhere. This also never consults
+/// flutter_rust_bridge's default loader, which searches the source tree
+/// first and so silently picks up a stale debug build when launched from
+/// inside the repo.
+ExternalLibrary rustLibrary() {
+  if (Platform.isMacOS || Platform.isIOS) {
+    return ExternalLibrary.process(iKnowHowToUseIt: true);
+  }
+  if (Platform.isAndroid) {
+    // The system linker finds it among the APK's native libraries by name.
+    return ExternalLibrary.open('libwebsave_bridge.so');
+  }
+  final bundle = File(Platform.resolvedExecutable).parent.path;
+  final sep = Platform.pathSeparator;
+  return ExternalLibrary.open(
+    Platform.isWindows
+        ? '$bundle${sep}websave_bridge.dll'
+        : '$bundle${sep}lib${sep}libwebsave_bridge.so',
+  );
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
