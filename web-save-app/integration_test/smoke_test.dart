@@ -21,14 +21,25 @@
 // AOT-compiled like the release build. Release itself cannot be driven: it
 // strips the service protocol the test runner talks over.
 
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:websave_app/main.dart' as app;
+import 'package:websave_app/platform/capture_host.dart';
+import 'package:websave_app/platform/desktop_window.dart' show isDesktop;
+import 'package:websave_app/src/rust/api/capture_api.dart';
 
 /// The vault this run writes to, from `--dart-define=WEBSAVE_VAULT=...`.
 const _vault = String.fromEnvironment('WEBSAVE_VAULT');
+
+/// Set by CI on desktop, where nothing else can hold the capture port: this
+/// app must then be the one serving the extension, or the run fails. Left
+/// unset locally, where a legacy WebSave may legitimately own the port.
+const _requireCapture = bool.fromEnvironment('WEBSAVE_REQUIRE_CAPTURE');
 
 /// Unique per run, so a vault reused between local runs cannot satisfy the
 /// "it appeared" check with a save from last time.
@@ -95,7 +106,60 @@ void main() {
       gone: true,
     );
     expect(listed, findsWidgets, reason: 'search dropped the matching save');
+
+    // The browser extension's way in, end to end: an HTTP POST to the
+    // capture server, exactly as the extension sends it, showing up in the
+    // app. Only against a server this app started. If another WebSave owns
+    // the port, a POST would land in *its* vault, which is real data.
+    if (isDesktop) await _captureLikeTheExtension(tester);
   });
+}
+
+Future<void> _captureLikeTheExtension(WidgetTester tester) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (captureServer.value == null && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+  final server = captureServer.value;
+  if (server?.state != CaptureServerState.serving) {
+    if (_requireCapture) {
+      fail(
+        'The app is not serving the extension: ${server?.state} '
+        '${server?.reason ?? ''}',
+      );
+    }
+    debugPrint(
+      'Skipping the extension check: another WebSave owns the capture '
+      'port (${server?.state}), and posting would write to its vault.',
+    );
+    return;
+  }
+
+  final url = 'https://ext-$_marker.example/captured';
+  final client = HttpClient();
+  try {
+    final request = await client.postUrl(
+      Uri.parse('http://127.0.0.1:38917/save'),
+    );
+    request.headers
+      ..contentType = ContentType.json
+      ..set('x-websave-client', 'extension');
+    request.write(jsonEncode({'url': url, 'title': 'Captured by smoke test'}));
+    final response = await request.close();
+    await response.drain<void>();
+    expect(response.statusCode, 200, reason: 'POST /save was refused');
+  } finally {
+    client.close();
+  }
+
+  // The capture event refreshes the list. The search box still filters on
+  // the marker, which this URL contains, so it must show up without any
+  // user action.
+  await _waitFor(
+    tester,
+    find.textContaining('ext-$_marker.example'),
+    'the page posted to the capture server to appear in the app',
+  );
 }
 
 /// Open the add dialog, type [url], save, and wait for the dialog to close.

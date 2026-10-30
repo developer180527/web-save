@@ -127,10 +127,6 @@ jobs:
       - name: Smoke test
         shell: bash
         working-directory: web-save-app
-        env:
-          # The macOS release is arm64-only; test the same build.
-          FLUTTER_XCODE_ARCHS: arm64
-          FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
         run: |
           flutter pub get
           # Profile, not debug: it is AOT-compiled like the release build.
@@ -139,6 +135,9 @@ jobs:
             --driver=test_driver/integration_test.dart
             --target=integration_test/smoke_test.dart
             "--dart-define=WEBSAVE_VAULT=$RUNNER_TEMP/smoke/vault"
+            # Nothing else holds the capture port on a fresh runner, so the
+            # app must serve the extension itself and the test posts to it.
+            --dart-define=WEBSAVE_REQUIRE_CAPTURE=true
             -d ${{ matrix.device }})
           if [ "$RUNNER_OS" = Linux ]; then
             # No screen on a CI machine; give GTK a virtual one.
