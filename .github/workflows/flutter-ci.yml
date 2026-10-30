@@ -90,3 +90,143 @@ jobs:
         run: |
           flutter pub get
           flutter test
+
+  # Builds the real app and drives it: start, add two links through the UI,
+  # find one by search. See web-save-app/integration_test/smoke_test.dart.
+  # The tests above run against fakes and cannot notice an app that fails
+  # to start; this can.
+  smoke-desktop:
+    name: Launch · ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: macOS arm64, runner: macos-26, device: macos }
+          - { label: Linux x64, runner: ubuntu-24.04, device: linux }
+          - { label: Linux arm64, runner: ubuntu-24.04-arm, device: linux }
+          - { label: Windows x64, runner: windows-2025, device: windows }
+          - { label: Windows arm64, runner: windows-11-arm, device: windows }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build and display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            xvfb libgl1-mesa-dri
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Smoke test
+        shell: bash
+        working-directory: web-save-app
+        env:
+          # The macOS release is arm64-only; test the same build.
+          FLUTTER_XCODE_ARCHS: arm64
+          FLUTTER_XCODE_ONLY_ACTIVE_ARCH: "NO"
+        run: |
+          flutter pub get
+          # Profile, not debug: it is AOT-compiled like the release build.
+          # Release itself cannot be driven by a test.
+          cmd=(flutter drive --profile
+            --driver=test_driver/integration_test.dart
+            --target=integration_test/smoke_test.dart
+            "--dart-define=WEBSAVE_VAULT=$RUNNER_TEMP/smoke/vault"
+            -d ${{ matrix.device }})
+          if [ "$RUNNER_OS" = Linux ]; then
+            # No screen on a CI machine; give GTK a virtual one.
+            xvfb-run -a -s "-screen 0 1440x900x24" "${cmd[@]}"
+          else
+            "${cmd[@]}"
+          fi
+
+  smoke-ios:
+    name: Launch · iOS Simulator
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Boot a simulator
+        id: sim
+        run: |
+          # The newest available iPhone, whatever this runner image ships.
+          udid=$(xcrun simctl list devices available --json \
+            | jq -r '[.devices | to_entries[]
+                      | select(.key | contains("iOS"))
+                      | .value[] | select(.name | startswith("iPhone"))]
+                     | last | .udid')
+          [ -n "$udid" ] && [ "$udid" != null ] || { echo "::error::no iPhone simulator on this runner"; exit 1; }
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test
+        working-directory: web-save-app
+        run: |
+          flutter pub get
+          # Simulators only run debug builds. A simulator app is not
+          # sandboxed from the host, so a host temp path works as the vault.
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/smoke_test.dart \
+            "--dart-define=WEBSAVE_VAULT=$RUNNER_TEMP/smoke/vault" \
+            -d ${{ steps.sim.outputs.udid }}
+
+  smoke-android:
+    name: Launch · Android emulator
+    # x86_64 Linux is the only GitHub-hosted runner with KVM, which the
+    # emulator needs to be usable at all.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Fetch packages
+        working-directory: web-save-app
+        run: flutter pub get
+
+      - name: Smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          working-directory: web-save-app
+          # Debug: the emulator is x86_64, and that is the ABI debug builds add.
+          # The vault goes in the app's own data directory, the one place on
+          # the device it is certain to be allowed to write.
+          script: >-
+            flutter drive
+            --driver=test_driver/integration_test.dart
+            --target=integration_test/smoke_test.dart
+            --dart-define=WEBSAVE_VAULT=/data/data/com.venugopal.websave_app/files/smoke/vault
+            -d emulator-5554
