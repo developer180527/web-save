@@ -130,7 +130,15 @@ mod tests {
     /// caller, which is the whole point of the catch_unwind above.
     #[test]
     fn unopenable_vault_is_reported() {
-        let path = CString::new("/dev/null/not-a-directory").unwrap();
+        // A directory inside a regular file cannot exist on any OS. The
+        // obvious `/dev/null/...` is only unopenable on Unix; on Windows it
+        // reads as `C:\dev\null\...`, which opens fine and leaves a stray
+        // vault on the drive.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a-file");
+        std::fs::write(&file, b"").unwrap();
+        let vault = file.join("vault");
+        let path = CString::new(vault.to_str().unwrap()).unwrap();
         let code = unsafe { websave_run_due_checks(path.as_ptr()) };
         assert_eq!(code, WEBSAVE_BG_VAULT_FAILED);
     }
