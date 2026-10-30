@@ -15,6 +15,8 @@ import 'package:flutter_theme_engine/flutter_theme_engine.dart';
 
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../platform/capture_host.dart';
+import '../src/rust/api/capture_api.dart';
 import '../src/rust/api/vault_api.dart';
 import '../theme/websave_theme.dart';
 import 'activity_log_panel.dart';
@@ -199,11 +201,13 @@ class _MenubarPlaceholder extends StatelessWidget {
 
 /// What the vault records about the extension.
 ///
-/// This reports the last contact, not a live socket: the capture server runs
-/// in the Tauri build, and it stamps the vault on every call. Saying
-/// "connected" off a 12-hour window is a deliberate choice — the extension
-/// only calls in when something is saved, so a shorter window would report a
-/// working setup as broken over a quiet afternoon.
+/// Two separate facts. Whether the extension *can* reach a vault right now
+/// (this app's capture server, or another WebSave holding the port), and the
+/// last contact that actually happened, which the server stamps into the
+/// vault on every call. The second says "connected" off a 12-hour window on
+/// purpose: the extension only calls in when something is saved, so a
+/// shorter window would report a working setup as broken over a quiet
+/// afternoon.
 class _ExtensionStatusPanel extends StatefulWidget {
   const _ExtensionStatusPanel();
 
@@ -250,14 +254,58 @@ class _ExtensionStatusPanelState extends State<_ExtensionStatusPanel> {
     final never = status.lastSeen == null;
     return Column(
       children: [
+        ValueListenableBuilder(
+          valueListenable: captureServer,
+          builder: (context, server, _) {
+            final (text, detail, ok) = switch (server?.state) {
+              null => ('Starting…', null, true),
+              CaptureServerState.serving => (
+                'Listening',
+                'The extension saves straight into this vault.',
+                true,
+              ),
+              CaptureServerState.otherInstance => (
+                'Another WebSave',
+                'The legacy WebSave app is serving the extension. Saves '
+                    'still reach this vault; quit it and restart this app to '
+                    'take over.',
+                true,
+              ),
+              CaptureServerState.unavailable => (
+                'Unavailable',
+                'Another program holds port 38917, so the extension cannot '
+                    'save. ${server?.reason ?? ''}'.trim(),
+                false,
+              ),
+            };
+            return SettingsRow(
+              label: 'Capture server',
+              detail: detail,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: ok ? ws.health.active : ws.health.dead,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 7),
+                  Text(text, style: TextStyle(color: ws.text, fontSize: 13)),
+                ],
+              ),
+            );
+          },
+        ),
         SettingsRow(
           label: 'Status',
           detail: never
               ? 'No capture has reached this vault yet.'
               : status.connected
               ? 'Saving to this vault.'
-              : 'No capture recently. The extension may be disabled, or the '
-                    'engine not running.',
+              : 'No capture recently. The extension may be disabled.',
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

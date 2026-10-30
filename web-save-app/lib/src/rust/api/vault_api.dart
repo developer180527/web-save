@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `describe_format`, `launcher`, `vault`
+// These functions are ignored because they are not marked as `pub`: `describe_format`, `launcher`, `shared_vault`, `vault`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `from`
 
 /// Open (or create) the vault at `path`. Call once at startup.
@@ -157,11 +157,11 @@ Future<bool> supportsLaunchAtLogin() =>
 
 /// What the vault knows about the browser extension.
 ///
-/// Read from vault meta rather than from a live socket: the capture server
-/// runs in the Tauri build, not here, and it records `ext.last_seen` and
-/// `ext.version` on every call. That makes this honest about what it is — a
-/// record of the last contact, not a live connection check — and it keeps
-/// working when the engine is running and this app is merely looking on.
+/// Read from vault meta rather than from a live socket: whichever app is
+/// serving the extension (this one, or the legacy Tauri app when it holds
+/// the port) records `ext.last_seen` and `ext.version` on every call. That
+/// makes this honest about what it is, a record of the last contact rather
+/// than a live connection check, and right whichever app took the call.
 Future<ExtensionStatus> extensionStatus() =>
     RustLib.instance.api.crateApiVaultApiExtensionStatus();
 

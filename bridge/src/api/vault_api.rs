@@ -100,6 +100,12 @@ fn vault() -> Result<&'static Arc<Vault>, String> {
     VAULT.get().ok_or_else(|| "vault not opened".to_string())
 }
 
+/// The open vault for other bridge modules that need to own a handle, like
+/// the capture server's worker thread.
+pub(crate) fn shared_vault() -> Result<Arc<Vault>, String> {
+    vault().cloned()
+}
+
 /// A tag and how many saves carry it, for the sidebar.
 pub struct TagCountView {
     pub name: String,
@@ -570,11 +576,11 @@ pub struct ExtensionStatus {
 
 /// What the vault knows about the browser extension.
 ///
-/// Read from vault meta rather than from a live socket: the capture server
-/// runs in the Tauri build, not here, and it records `ext.last_seen` and
-/// `ext.version` on every call. That makes this honest about what it is — a
-/// record of the last contact, not a live connection check — and it keeps
-/// working when the engine is running and this app is merely looking on.
+/// Read from vault meta rather than from a live socket: whichever app is
+/// serving the extension (this one, or the legacy Tauri app when it holds
+/// the port) records `ext.last_seen` and `ext.version` on every call. That
+/// makes this honest about what it is, a record of the last contact rather
+/// than a live connection check, and right whichever app took the call.
 pub fn extension_status() -> Result<ExtensionStatus, String> {
     let vault = vault()?;
     let last_seen = vault

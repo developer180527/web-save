@@ -4,6 +4,8 @@
 // once, the shell picks itself by width, and the feature screens below know
 // about neither.
 
+import 'dart:async';
+
 import 'theme/app_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_theme_engine/flutter_theme_engine.dart';
@@ -13,7 +15,9 @@ import 'features/saves_screen.dart';
 import 'features/settings_screen.dart';
 import 'features/transfer_screen.dart';
 import 'features/vault_sidebar.dart';
+import 'platform/capture_host.dart';
 import 'shell/app_shell.dart';
+import 'src/rust/api/capture_api.dart' show CaptureNotice;
 import 'theme/packs.dart';
 import 'theme/pointer_density_trigger.dart';
 import 'theme/vault_theme_store.dart';
@@ -74,15 +78,28 @@ class _HomeShellState extends State<HomeShell> {
   // Owned here rather than inside SavesScreen so the sidebar's counts,
   // filters and tags read the same state the list does.
   final _saves = SavesController();
+  StreamSubscription<CaptureNotice>? _captures;
 
   @override
   void initState() {
     super.initState();
     _saves.load();
+    // Serve the browser extension. Here rather than in main() because a
+    // capture has to refresh this controller, and the vault is open by now.
+    startCaptureHost(
+      onVaultChanged: () => _saves.load(quiet: true),
+    ).then((subscription) {
+      if (mounted) {
+        _captures = subscription;
+      } else {
+        subscription?.cancel();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _captures?.cancel();
     _saves.dispose();
     super.dispose();
   }
