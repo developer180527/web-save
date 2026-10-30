@@ -2,7 +2,9 @@
 /// Details: https://fzyzcjy.github.io/flutter_rust_bridge/manual/integrate/builtin
 
 import java.nio.file.Paths
+import javax.inject.Inject
 import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.process.ExecOperations
 
 CargoKitPlugin.file = buildscript.sourceFile
 
@@ -14,6 +16,13 @@ class CargoKitExtension {
 }
 
 abstract class CargoKitBuildTask extends DefaultTask {
+
+    // Local patch to vendored Cargokit: Gradle 9 removed `Project.exec`,
+    // which this task used to call, and Flutter's Android template now ships
+    // Gradle 9. ExecOperations is the documented replacement and also works
+    // on Gradle 8, so this is safe either side of the upgrade.
+    @Inject
+    abstract ExecOperations getExecOperations()
 
     @Input
     String buildMode
@@ -60,12 +69,12 @@ abstract class CargoKitBuildTask extends DefaultTask {
         def rootProjectDir = project.rootProject.projectDir
 
         if (!Os.isFamily(Os.FAMILY_WINDOWS)) {
-            project.exec {
+            execOperations.exec {
                 commandLine 'chmod', '+x', path
             }
         }
 
-        project.exec {
+        execOperations.exec {
             executable path
             args "build-gradle"
             environment "CARGOKIT_ROOT_PROJECT_DIR", rootProjectDir
