@@ -29,9 +29,13 @@ android {
         namespace 'com.flutter_rust_bridge.websave_bridge'
     }
 
-    // Bumping the plugin compileSdkVersion requires all clients of this plugin
-    // to bump the version in their app.
-    compileSdkVersion 33
+    // Kept equal to the app's compileSdk, which Flutter's Gradle plugin sets
+    // (36 as of Flutter 3.44). The template's 33 fails the release build:
+    // AndroidX libraries the app pulls in require compiling against 34+, and
+    // AGP checks that against every module, this one included. The template
+    // warns that raising it forces every client app to follow, but this
+    // plugin has exactly one client, and it is already there.
+    compileSdkVersion 36
 
     // Use the NDK version
     // declared in /android/app/build.gradle file of the Flutter project.
