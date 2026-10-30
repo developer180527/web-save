@@ -18,13 +18,14 @@
 mod client_gate;
 mod endpoints;
 mod events;
+mod extension_cors;
 mod screenshot_data_url;
 
 pub use events::CaptureEvent;
 
 use std::sync::Arc;
 
-use tiny_http::Server;
+use tiny_http::{Method, Server};
 
 use crate::vault::Vault;
 
@@ -77,7 +78,17 @@ impl CaptureServer {
         let worker = server.clone();
         std::thread::spawn(move || {
             for mut request in worker.incoming_requests() {
-                let reply = endpoints::route(&mut request, &vault, &config, &sink);
+                let extension = extension_cors::extension_origin(&request);
+                let reply = match (request.method(), extension.as_deref()) {
+                    // Only an extension's preflight is answered. Anyone
+                    // else's falls through to the router's 404, as before.
+                    (Method::Options, Some(_)) => extension_cors::preflight(),
+                    _ => endpoints::route(&mut request, &vault, &config, &sink),
+                };
+                let reply = match extension.as_deref() {
+                    Some(origin) => extension_cors::allow(reply, origin),
+                    None => reply,
+                };
                 if let Err(e) = request.respond(reply) {
                     log::warn!("capture server: failed to respond: {e}");
                 }

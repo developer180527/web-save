@@ -113,24 +113,117 @@ fn reads_and_writes_are_refused_without_the_client_header() {
     assert!(h.events().is_empty());
 }
 
-/// The other half of the model: we must never send CORS headers, or the
-/// preflight would start succeeding and the header gate would mean nothing.
+/// The other half of the model: a web page must never get CORS headers, or
+/// its preflight would start succeeding and the header gate would mean
+/// nothing. Covers a page's origin, a forged lookalike, and no origin at all.
 #[test]
-fn no_response_ever_carries_cors_headers() {
+fn web_pages_never_get_cors_headers() {
     let h = start();
-    for path in ["/ping", "/recent", "/nope"] {
-        let url = format!("{}{path}", h.base);
-        let response = match ureq::get(&url).set(CLIENT_HEADER, "extension").call() {
-            Ok(r) => r,
-            Err(ureq::Error::Status(_, r)) => r,
-            Err(e) => panic!("{e}"),
-        };
-        for header in response.headers_names() {
-            assert!(
-                !header.to_ascii_lowercase().starts_with("access-control-"),
-                "{path} leaked a CORS header: {header}"
-            );
+    for origin in [
+        Some("https://evil.example"),
+        Some("http://127.0.0.1:38917"),
+        Some("null"),
+        // Lookalikes a page could put in a URL, but not in its Origin; the
+        // check must not be fooled by them either.
+        Some("https://moz-extension.evil.example"),
+        Some("moz-extension://"),
+        Some("moz-extension://abc\"onerror"),
+        None,
+    ] {
+        for path in ["/ping", "/recent", "/nope"] {
+            let mut request = ureq::get(&format!("{}{path}", h.base)).set(CLIENT_HEADER, "extension");
+            if let Some(origin) = origin {
+                request = request.set("Origin", origin);
+            }
+            let response = match request.call() {
+                Ok(r) => r,
+                Err(ureq::Error::Status(_, r)) => r,
+                Err(e) => panic!("{e}"),
+            };
+            assert_no_cors(&response, &format!("{path} for origin {origin:?}"));
         }
+    }
+}
+
+/// A web page's preflight is refused outright, so the browser never sends
+/// the real request with the client header.
+#[test]
+fn a_web_page_preflight_is_refused() {
+    let h = start();
+    let (status, _) = send(
+        ureq::request("OPTIONS", &format!("{}/save", h.base))
+            .set("Origin", "https://evil.example")
+            .set("Access-Control-Request-Method", "POST")
+            .set("Access-Control-Request-Headers", "content-type,x-websave-client"),
+        None,
+    );
+    assert_eq!(status, 404);
+}
+
+/// Firefox holds an extension's loopback requests to CORS despite its host
+/// permission, so an extension's preflight is answered and its responses name
+/// its origin. Without this, every capture from Firefox failed.
+#[test]
+fn extensions_get_cors_for_their_own_origin() {
+    let h = start();
+    for origin in [
+        "moz-extension://52d1a340-206f-48ea-8ad7-dfe03981da53",
+        "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+        "safari-web-extension://4C1E5A0B-1234-4ABC-9DEF-0123456789AB",
+    ] {
+        let preflight = ureq::request("OPTIONS", &format!("{}/save", h.base))
+            .set("Origin", origin)
+            .set("Access-Control-Request-Method", "POST")
+            .set("Access-Control-Request-Headers", "content-type,x-websave-client")
+            .call()
+            .expect("an extension's preflight is answered");
+        assert_eq!(preflight.status(), 204);
+        assert_eq!(preflight.header("Access-Control-Allow-Origin"), Some(origin));
+        assert_eq!(
+            preflight.all("Access-Control-Allow-Origin").len(),
+            1,
+            "a browser rejects a repeated Allow-Origin"
+        );
+        let allowed = preflight.header("Access-Control-Allow-Headers").unwrap_or("");
+        assert!(allowed.contains(CLIENT_HEADER), "{allowed}");
+        assert!(allowed.contains("content-type"), "{allowed}");
+
+        let (status, _) = send(
+            ureq::post(&format!("{}/save", h.base))
+                .set("Origin", origin)
+                .set(CLIENT_HEADER, "extension")
+                .set("Content-Type", "application/json"),
+            Some(r#"{"url":"https://example.com/from-an-extension"}"#),
+        );
+        assert_eq!(status, 200);
+        let response = ureq::get(&format!("{}/ping", h.base))
+            .set("Origin", origin)
+            .call()
+            .unwrap();
+        assert_eq!(response.header("Access-Control-Allow-Origin"), Some(origin));
+        assert_eq!(response.header("Vary"), Some("Origin"));
+    }
+}
+
+/// CORS lets an extension *read* a response; it is not a way around the
+/// client header, which every vault-touching request still needs.
+#[test]
+fn an_extension_origin_does_not_bypass_the_client_header() {
+    let h = start();
+    let (status, _) = send(
+        ureq::post(&format!("{}/save", h.base)).set("Origin", "moz-extension://abc"),
+        Some(r#"{"url":"https://example.com/x"}"#),
+    );
+    assert_eq!(status, 403);
+    assert_eq!(h.vault.stats().unwrap().total, 0);
+}
+
+fn assert_no_cors(response: &ureq::Response, what: &str) {
+    for header in response.headers_names() {
+        assert!(
+            !header.to_ascii_lowercase().starts_with("access-control-"),
+            "{what} leaked a CORS header: {header}"
+        );
     }
 }
 
